@@ -2,7 +2,10 @@ package codex
 
 import (
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/brainwhocodes/ralph-codex/internal/state"
 )
 
 func TestParseJSONLLineValid(t *testing.T) {
@@ -90,4 +93,325 @@ func TestSessionSaveLoad(t *testing.T) {
 	if loaded != testID {
 		t.Errorf("LoadSessionID() loaded = %s, want %s", loaded, testID)
 	}
+}
+
+func TestParseJSONLLineInvalid(t *testing.T) {
+	line := `{invalid json}`
+
+	_, err := ParseJSONLLine(line)
+
+	if err == nil {
+		t.Error("ParseJSONLLine() expected error for invalid JSON")
+	}
+}
+
+func TestParseJSONLLineEmpty(t *testing.T) {
+	line := ""
+
+	event, err := ParseJSONLLine(line)
+
+	if err != nil {
+		t.Errorf("ParseJSONLLine() empty line error = %v", err)
+	}
+
+	if event != nil {
+		t.Error("ParseJSONLLine() empty line expected nil event")
+	}
+}
+
+func TestEventType(t *testing.T) {
+	tests := []struct {
+		name  string
+		event Event
+		want  string
+	}{
+		{
+			name:  "thread.started event",
+			event: Event{"event": "thread.started", "thread_id": "test-123"},
+			want:  "thread.started",
+		},
+		{
+			name:  "message event",
+			event: Event{"type": "message", "text": "hello"},
+			want:  "",
+		},
+		{
+			name:  "no event field",
+			event: Event{"thread_id": "test-123"},
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := EventType(tt.event); got != tt.want {
+				t.Errorf("EventType() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestThreadID(t *testing.T) {
+	tests := []struct {
+		name  string
+		event Event
+		want  string
+	}{
+		{
+			name:  "has thread_id",
+			event: Event{"event": "thread.started", "thread_id": "test-123"},
+			want:  "test-123",
+		},
+		{
+			name:  "no thread_id",
+			event: Event{"event": "thread.started"},
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ThreadID(tt.event); got != tt.want {
+				t.Errorf("ThreadID() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMessageType(t *testing.T) {
+	tests := []struct {
+		name  string
+		event Event
+		want  string
+	}{
+		{
+			name:  "message type",
+			event: Event{"type": "message", "text": "hello"},
+			want:  "message",
+		},
+		{
+			name:  "text type",
+			event: Event{"type": "text", "text": "world"},
+			want:  "text",
+		},
+		{
+			name:  "no type field",
+			event: Event{"text": "hello"},
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := MessageType(tt.event); got != tt.want {
+				t.Errorf("MessageType() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMessageText(t *testing.T) {
+	tests := []struct {
+		name  string
+		event Event
+		want  string
+	}{
+		{
+			name:  "has text",
+			event: Event{"type": "message", "text": "hello world"},
+			want:  "hello world",
+		},
+		{
+			name:  "no text field",
+			event: Event{"type": "message"},
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := MessageText(tt.event); got != tt.want {
+				t.Errorf("MessageText() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsJSONL(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want bool
+	}{
+		{
+			name: "object start",
+			line: `{"event": "test"}`,
+			want: true,
+		},
+		{
+			name: "array start",
+			line: `[1, 2, 3]`,
+			want: true,
+		},
+		{
+			name: "whitespace and object",
+			line: `  {"event": "test"}`,
+			want: true,
+		},
+		{
+			name: "plain text",
+			line: "hello world",
+			want: false,
+		},
+		{
+			name: "empty",
+			line: "",
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsJSONL(tt.line); got != tt.want {
+				t.Errorf("IsJSONL() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewSession(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+
+	os.Chdir(tmpDir)
+
+	SaveSessionID("test-session")
+
+	err := NewSession()
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+
+	id, err := LoadSessionID()
+	if err != nil {
+		t.Fatalf("LoadSessionID() after NewSession() error = %v", err)
+	}
+
+	if id != "" {
+		t.Errorf("LoadSessionID() after NewSession() = %v, want empty", id)
+	}
+}
+
+func TestSessionExists(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+
+	os.Chdir(tmpDir)
+
+	if SessionExists() {
+		t.Error("SessionExists() with no session = true, want false")
+	}
+
+	SaveSessionID("test-session")
+
+	if !SessionExists() {
+		t.Error("SessionExists() with session = false, want true")
+	}
+}
+
+func TestRunnerCreate(t *testing.T) {
+	config := Config{
+		Backend: "cli",
+		Timeout: 600,
+		Verbose: true,
+	}
+
+	runner := NewRunner(config)
+
+	if runner == nil {
+		t.Fatal("NewRunner() returned nil")
+	}
+
+	if runner.config.Backend != "cli" {
+		t.Errorf("NewRunner() backend = %v, want cli", runner.config.Backend)
+	}
+}
+
+func TestParseComplexJSONL(t *testing.T) {
+	jsonlStream := `{"event": "thread.started", "thread_id": "thread-abc-123"}
+{"type": "message", "text": "First line"}
+{"type": "message", "text": "Second line"}
+{"event": "thread.completed", "thread_id": "thread-abc-123"}`
+
+	lines := strings.Split(jsonlStream, "\n")
+	threadID, message, events := ParseJSONLStream(lines)
+
+	if threadID != "thread-abc-123" {
+		t.Errorf("ParseJSONLStream() threadID = %v, want thread-abc-123", threadID)
+	}
+
+	expectedMessage := "First line\nSecond line"
+	if message != expectedMessage {
+		t.Errorf("ParseJSONLStream() message = %v, want %v", message, expectedMessage)
+	}
+
+	if len(events) != 4 {
+		t.Errorf("ParseJSONLStream() events count = %v, want 4", len(events))
+	}
+}
+
+func TestStatePersistence(t *testing.T) {
+	t.Run("Save and Load Codex Session", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		origDir, _ := os.Getwd()
+		defer os.Chdir(origDir)
+
+		os.Chdir(tmpDir)
+
+		sessionID := "session-" + strings.Repeat("x", 20)
+
+		err := state.SaveCodexSession(sessionID)
+		if err != nil {
+			t.Fatalf("state.SaveCodexSession() error = %v", err)
+		}
+
+		loadedID, err := state.LoadCodexSession()
+		if err != nil {
+			t.Fatalf("state.LoadCodexSession() error = %v", err)
+		}
+
+		if loadedID != sessionID {
+			t.Errorf("state.LoadCodexSession() = %v, want %v", loadedID, sessionID)
+		}
+	})
+
+	t.Run("Save and Load Ralph Session", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		origDir, _ := os.Getwd()
+		defer os.Chdir(origDir)
+
+		os.Chdir(tmpDir)
+
+		sessionData := map[string]interface{}{
+			"id":         "ralph-session-123",
+			"created_at": "2024-01-01T00:00:00Z",
+			"last_used":  "2024-01-01T01:00:00Z",
+		}
+
+		err := state.SaveRalphSession(sessionData)
+		if err != nil {
+			t.Fatalf("state.SaveRalphSession() error = %v", err)
+		}
+
+		loadedData, err := state.LoadRalphSession()
+		if err != nil {
+			t.Fatalf("state.LoadRalphSession() error = %v", err)
+		}
+
+		if loadedData["id"] != sessionData["id"] {
+			t.Errorf("state.LoadRalphSession() id = %v, want %v", loadedData["id"], sessionData["id"])
+		}
+	})
 }

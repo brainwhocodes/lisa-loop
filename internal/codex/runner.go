@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,9 +12,13 @@ import (
 	"github.com/brainwhocodes/ralph-codex/internal/state"
 )
 
+// OutputCallback is called for each line of streaming output
+type OutputCallback func(event Event)
+
 // Runner executes Codex commands
 type Runner struct {
-	config Config
+	config         Config
+	outputCallback OutputCallback
 }
 
 // NewRunner creates a new Codex runner
@@ -21,73 +26,124 @@ func NewRunner(config Config) *Runner {
 	return &Runner{config: config}
 }
 
-// Run executes a Codex command
+// SetOutputCallback sets the callback for streaming output
+func (r *Runner) SetOutputCallback(cb OutputCallback) {
+	r.outputCallback = cb
+}
+
+// Run executes a Codex command using the CLI with streaming
 func (r *Runner) Run(prompt string) (output string, threadID string, err error) {
-	switch r.config.Backend {
-	case "cli":
-		output, threadID, err = r.runCLI(prompt)
-	case "sdk":
-		return "", "", fmt.Errorf("SDK backend not yet implemented")
-	default:
-		return "", "", fmt.Errorf("unknown backend: %s", r.config.Backend)
-	}
-
-	return output, threadID, err
+	return r.runCLI(prompt)
 }
 
-// runCLI executes Codex CLI
+// runCLI executes Codex CLI in non-interactive mode with streaming
 func (r *Runner) runCLI(prompt string) (string, string, error) {
-	cmd := r.buildCLICommand(prompt)
-
-	if r.config.Verbose {
-		fmt.Printf("Executing: %s\n", cmd.String())
-	}
-
-	// Run command
-	outputBytes, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", "", fmt.Errorf("codex execution failed: %w", err)
-	}
-
-	output := string(outputBytes)
-
-	// Parse JSONL output
-	threadID, message, _ := ParseJSONLStream(strings.Split(output, "\n"))
-
-	// Save session ID if we got one
-	if threadID != "" {
-		if err := SaveSessionID(threadID); err != nil {
-			return output, threadID, fmt.Errorf("failed to save session ID: %w", err)
-		}
-	}
-
-	// Return message content instead of full output (or thread ID if only that)
-	if message != "" {
-		return message, threadID, nil
-	}
-
-	return output, threadID, nil
-}
-
-// buildCLICommand builds Codex CLI command
-func (r *Runner) buildCLICommand(prompt string) *exec.Cmd {
 	args := []string{
 		"exec",
 		"--json",
 		"--skip-git-repo-check",
+		"--sandbox", "danger-full-access",
 	}
 
-	// Add thread ID if session exists
+	// Add thread ID if session exists for conversation continuity
 	if id, err := LoadSessionID(); err == nil && id != "" {
-		args = append(args, "--resume", "--thread-id", id)
+		args = append(args, "resume", "--last")
 	}
 
 	cmd := exec.Command("codex", args...)
-
-	// Write prompt to stdin
 	cmd.Stdin = strings.NewReader(prompt)
 
-	return cmd
+	if r.config.Verbose {
+		fmt.Printf("Executing: codex %s\n", strings.Join(args, " "))
+	}
+
+	// Set up pipes for streaming
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
+
+	// Start command
+	if err := cmd.Start(); err != nil {
+		return "", "", fmt.Errorf("failed to start codex: %w", err)
+	}
+
+	// Read output streams
+	var outputBuilder strings.Builder
+	var threadID string
+	var message strings.Builder
+
+	// Process stdout (JSONL events)
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		line := scanner.Text()
+		outputBuilder.WriteString(line)
+		outputBuilder.WriteString("\n")
+
+		// Parse and handle event
+		event, err := ParseJSONLLine(line)
+		if err != nil {
+			continue
+		}
+
+		// Extract thread ID
+		if EventType(event) == "thread.started" {
+			tid := ThreadID(event)
+			if tid != "" {
+				threadID = tid
+			}
+		}
+
+		// Accumulate message text
+		if MessageType(event) == "message" || MessageType(event) == "text" {
+			msg := MessageText(event)
+			if msg != "" {
+				message.WriteString(msg)
+				message.WriteString("\n")
+			}
+		}
+
+		// Call output callback for real-time updates
+		if r.outputCallback != nil && event != nil {
+			r.outputCallback(event)
+		}
+	}
+
+	// Read stderr
+	stderrScanner := bufio.NewScanner(stderr)
+	var stderrOutput strings.Builder
+	for stderrScanner.Scan() {
+		stderrOutput.WriteString(stderrScanner.Text())
+		stderrOutput.WriteString("\n")
+	}
+
+	// Wait for command to complete
+	if err := cmd.Wait(); err != nil {
+		errMsg := stderrOutput.String()
+		if errMsg == "" {
+			errMsg = outputBuilder.String()
+		}
+		return "", "", fmt.Errorf("codex execution failed: %w\nOutput: %s", err, errMsg)
+	}
+
+	// Save session ID if we got one
+	if threadID != "" {
+		if err := SaveSessionID(threadID); err != nil {
+			return outputBuilder.String(), threadID, fmt.Errorf("failed to save session ID: %w", err)
+		}
+	}
+
+	// Return message content instead of full output
+	if message.Len() > 0 {
+		return strings.TrimSpace(message.String()), threadID, nil
+	}
+
+	return outputBuilder.String(), threadID, nil
 }
 
 // Event represents a single JSONL event from Codex
@@ -140,8 +196,7 @@ func MessageText(event Event) string {
 	return ""
 }
 
-// ParseJSONLStream parses a complete JSONL stream from a reader
-// Returns: threadID, accumulated message text, all events parsed
+// ParseJSONLStream parses a complete JSONL stream
 func ParseJSONLStream(lines []string) (threadID string, message string, events []Event) {
 	events = make([]Event, 0, len(lines))
 	b := strings.Builder{}
@@ -177,31 +232,28 @@ func ParseJSONLStream(lines []string) (threadID string, message string, events [
 	return threadID, strings.TrimSpace(b.String()), events
 }
 
-// IsJSONL checks if a line looks like JSON (starts with { or [)
+// IsJSONL checks if a line looks like JSON
 func IsJSONL(line string) bool {
 	trimmed := strings.TrimSpace(line)
 	return strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[")
 }
 
-// LoadSessionID loads Codex session ID from .codex_session_id
+// LoadSessionID loads Codex session ID
 func LoadSessionID() (string, error) {
 	return state.LoadCodexSession()
 }
 
-// SaveSessionID saves Codex session ID to .codex_session_id atomically
+// SaveSessionID saves Codex session ID
 func SaveSessionID(id string) error {
 	return state.SaveCodexSession(id)
 }
 
 // NewSession creates a new session by clearing the session ID
 func NewSession() error {
-	if err := SaveSessionID(""); err != nil {
-		return err
-	}
-	return nil
+	return SaveSessionID("")
 }
 
-// SessionExists checks if a session ID file exists
+// SessionExists checks if a session ID exists
 func SessionExists() bool {
 	id, err := LoadSessionID()
 	if err != nil {
@@ -226,7 +278,7 @@ func SessionAgeHours() (int, error) {
 	return int(age), nil
 }
 
-// IsSessionExpired checks if the session has expired based on age
+// IsSessionExpired checks if the session has expired
 func IsSessionExpired(expiryHours int) bool {
 	if expiryHours <= 0 {
 		return false
@@ -247,7 +299,7 @@ type SessionMetadata struct {
 	LastUsed  time.Time
 }
 
-// LoadSessionMetadata loads session metadata from .ralph_session
+// LoadSessionMetadata loads session metadata
 func LoadSessionMetadata() (*SessionMetadata, error) {
 	sess, err := state.LoadRalphSession()
 	if err != nil {
@@ -273,7 +325,7 @@ func LoadSessionMetadata() (*SessionMetadata, error) {
 	return meta, nil
 }
 
-// SaveSessionMetadata saves session metadata atomically
+// SaveSessionMetadata saves session metadata
 func SaveSessionMetadata(meta *SessionMetadata) error {
 	sess := map[string]interface{}{
 		"id":         meta.ID,

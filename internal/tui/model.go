@@ -1,11 +1,14 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/brainwhocodes/ralph-codex/internal/loop"
 	"github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // State represents TUI state
@@ -62,6 +65,17 @@ type StatusMsg struct {
 // TickMsg is sent periodically for animations
 type TickMsg time.Time
 
+// ControllerEventMsg wraps events from the loop controller
+type ControllerEventMsg struct {
+	Event loop.LoopEvent
+}
+
+// Task represents a task from @fix_plan.md
+type Task struct {
+	Text      string
+	Completed bool
+}
+
 // Model represents main TUI model
 type Model struct {
 	state        State
@@ -76,12 +90,19 @@ type Model struct {
 	err          error
 	helpVisible  bool
 	startTime    time.Time
-	tick         int // Animation tick counter
+	tick         int      // Animation tick counter
+	width        int      // Terminal width
+	height       int      // Terminal height
+	tasks        []Task   // Tasks from @fix_plan.md
+	activity     string   // Current activity description
+	controller   *loop.Controller
+	ctx          context.Context
+	cancel       context.CancelFunc
 }
 
 // Init initializes model
 func (m Model) Init() tea.Cmd {
-	m.startTime = time.Now()
+	// startTime is now set in NewProgram, not here (value semantics issue)
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 		return TickMsg(t)
 	})
@@ -119,18 +140,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 
 			case "r":
-				if m.state != StateRunning {
+				if m.state != StateRunning && m.controller != nil {
 					m.state = StateRunning
-					return m, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
-						return StateChangeMsg{State: StateRunning}
-					})
+					m.ctx, m.cancel = context.WithCancel(context.Background())
+					go m.runController()
+					return m, nil
 				}
 
 			case "p":
-				if m.state == StateRunning {
-					m.state = StatePaused
-				} else if m.state == StatePaused {
-					m.state = StateRunning
+				if m.controller != nil {
+					if m.state == StateRunning {
+						m.state = StatePaused
+						m.controller.Pause()
+					} else if m.state == StatePaused {
+						m.state = StateRunning
+						m.controller.Resume()
+					}
 				}
 				return m, nil
 
@@ -192,7 +217,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.WindowSizeMsg:
-		// Handle window resize (to be implemented)
+		m.width = msg.Width
+		m.height = msg.Height
 		return m, nil
 
 	case TickMsg:
@@ -201,24 +227,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 			return TickMsg(t)
 		})
+
+	case ControllerEventMsg:
+		event := msg.Event
+		switch event.Type {
+		case "loop_update":
+			m.loopNumber = event.LoopNumber
+			m.callsUsed = event.CallsUsed
+			m.status = event.Status
+			m.circuitState = event.CircuitState
+		case "log":
+			formattedLog := styledLogEntry(event.LogLevel, event.LogMessage)
+			m.logs = append(m.logs, formattedLog)
+			if len(m.logs) > 500 {
+				m.logs = m.logs[len(m.logs)-500:]
+			}
+		case "state_change":
+			// Handle state changes if needed
+		}
+		return m, nil
 	}
 
 	return m, nil
 }
 
-// View renders TUI
+func (m *Model) runController() {
+	if m.controller == nil {
+		return
+	}
+	m.controller.Run(m.ctx)
+}
+
+// View renders TUI - fills entire terminal
 func (m Model) View() string {
 	if m.quitting {
-		return StyleInfoMsg.Render("\nGoodbye!\n")
+		return ""
 	}
 
-	// Show error view if there's an error
-	if m.err != nil && m.activeView != "help" {
-		return m.renderErrorView()
+	width := m.width
+	height := m.height
+	if width == 0 {
+		width = 80
+	}
+	if height == 0 {
+		height = 24
 	}
 
+	// Get content based on active view
 	var content string
-
 	switch m.activeView {
 	case "status":
 		content = m.renderStatusView()
@@ -232,7 +288,41 @@ func (m Model) View() string {
 		content = m.renderStatusView()
 	}
 
-	return content
+	// Show error view if there's an error
+	if m.err != nil && m.activeView != "help" {
+		content = m.renderErrorView()
+	}
+
+	// Pad content to fill entire screen
+	return m.padToFullScreen(content, width, height)
+}
+
+// padToFullScreen pads content to fill the entire terminal
+func (m Model) padToFullScreen(content string, width, height int) string {
+	lines := strings.Split(content, "\n")
+
+	// Pad each line to full width
+	var paddedLines []string
+	for _, line := range lines {
+		lineLen := lipgloss.Width(line)
+		if lineLen < width {
+			line = line + strings.Repeat(" ", width-lineLen)
+		}
+		paddedLines = append(paddedLines, line)
+	}
+
+	// Add empty lines to fill height
+	for len(paddedLines) < height {
+		paddedLines = append(paddedLines, strings.Repeat(" ", width))
+	}
+
+	// Apply background color to entire output
+	result := strings.Join(paddedLines[:height], "\n")
+	return lipgloss.NewStyle().
+		Width(width).
+		Height(height).
+		Background(BgPrimary).
+		Render(result)
 }
 
 func (m Model) renderRateLimitProgress() string {
@@ -254,17 +344,27 @@ func (m Model) renderRateLimitProgress() string {
 		emptyWidth = 0
 	}
 
+	// Use simple colored characters without background width issues
+	filledBar := StyleProgressFilled.Render(strings.Repeat("█", filled))
+	emptyBar := StyleProgressEmpty.Render(strings.Repeat("░", emptyWidth))
+
 	bar := fmt.Sprintf("Calls: %d/%d [%s%s]",
 		m.callsUsed, total,
-		StyleProgressBar.Render(strings.Repeat("█", filled)),
-		strings.Repeat("░", emptyWidth),
+		filledBar,
+		emptyBar,
 	)
 
 	return bar
 }
 
 func (m Model) renderStatusView() string {
-	header := StyleHeader.Render("Ralph Codex")
+	width := m.width
+	if width < 60 {
+		width = 60
+	}
+
+	// Header with title - full width
+	header := StyleHeader.Copy().Width(width).Render("  Ralph Codex")
 
 	// Circuit state badge
 	circuitState := "CLOSED"
@@ -275,58 +375,145 @@ func (m Model) renderStatusView() string {
 	var circuitBadge string
 	switch circuitState {
 	case "CLOSED":
-		circuitBadge = StyleCircuitClosed.Render(circuitState)
+		circuitBadge = StyleCircuitClosed.Render(" " + circuitState + " ")
 	case "HALF_OPEN":
-		circuitBadge = StyleCircuitHalfOpen.Render(circuitState)
+		circuitBadge = StyleCircuitHalfOpen.Render(" " + circuitState + " ")
 	case "OPEN":
-		circuitBadge = StyleCircuitOpen.Render(circuitState)
+		circuitBadge = StyleCircuitOpen.Render(" " + circuitState + " ")
 	default:
 		circuitBadge = circuitState
+	}
+
+	// State badge
+	var stateBadge string
+	switch m.state {
+	case StateInitializing:
+		stateBadge = StyleStatusInitializing.Render(" INIT ")
+	case StateRunning:
+		stateBadge = StyleStatusRunning.Render(" RUNNING ")
+	case StatePaused:
+		stateBadge = StyleStatusPaused.Render(" PAUSED ")
+	case StateComplete:
+		stateBadge = StyleStatusComplete.Render(" COMPLETE ")
+	case StateError:
+		stateBadge = StyleStatusError.Render(" ERROR ")
+	}
+
+	// Animated spinner if running
+	spinner := " "
+	if m.state == StateRunning {
+		spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+		spinner = StyleSpinner.Render(spinnerFrames[m.tick%len(spinnerFrames)])
 	}
 
 	// Progress bar for rate limit
 	progressBar := m.renderRateLimitProgress()
 
-	// Animated spinner if running
-	spinner := ""
-	if m.state == StateRunning {
-		spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-		spinner = fmt.Sprintf(" %s", StyleSpinner.Render(spinnerFrames[m.tick%len(spinnerFrames)]))
+	// Status line with all info - full width
+	statusLine := StyleStatus.Copy().Width(width).Render(fmt.Sprintf(" %s %s  Loop: %d  %s  Circuit: %s",
+		stateBadge, spinner, m.loopNumber, progressBar, circuitBadge))
+
+	// Activity/Status section - full width
+	activity := m.status
+	if m.activity != "" {
+		activity = m.activity
+	}
+	activityBox := StyleBoxRounded.Copy().Width(width - 4).Render(
+		StyleInfoMsg.Render("Status: ") + activity,
+	)
+
+	// Elapsed time
+	elapsed := time.Since(m.startTime).Round(time.Second)
+	elapsedStr := StyleHelpDesc.Render(fmt.Sprintf("Elapsed: %s", elapsed))
+
+	// Tasks section - full width
+	taskSection := m.renderTaskSection(width - 4)
+
+	// Keybindings footer - full width
+	footer := StyleStatus.Copy().Width(width).Render(fmt.Sprintf(
+		" %s Run  %s Pause  %s Logs  %s Circuit  %s Help  %s Quit",
+		StyleHelpKey.Render("r"),
+		StyleHelpKey.Render("p"),
+		StyleHelpKey.Render("l"),
+		StyleHelpKey.Render("c"),
+		StyleHelpKey.Render("?"),
+		StyleHelpKey.Render("q"),
+	))
+
+	// Join all sections with footer at bottom
+	return lipgloss.JoinVertical(lipgloss.Left,
+		header,
+		statusLine,
+		"",
+		activityBox,
+		"",
+		elapsedStr,
+		"",
+		taskSection,
+		"",
+		footer,
+	)
+}
+
+func (m Model) renderTaskSection(width int) string {
+	if len(m.tasks) == 0 {
+		return StyleHelpDesc.Render("  No tasks loaded. Check @fix_plan.md")
 	}
 
-	statusLine := StyleStatus.Render(fmt.Sprintf("Loop: %d%s | %s | Circuit: %s",
-		m.loopNumber, spinner, progressBar, circuitBadge))
+	var lines []string
+	lines = append(lines, StyleInfoMsg.Render("  Tasks:"))
 
-	statusDetail := fmt.Sprintf("\n%s", m.status)
+	shown := 0
+	for _, task := range m.tasks {
+		if shown >= 5 {
+			remaining := 0
+			for _, t := range m.tasks[shown:] {
+				if !t.Completed {
+					remaining++
+				}
+			}
+			if remaining > 0 {
+				lines = append(lines, StyleHelpDesc.Render(fmt.Sprintf("    ... and %d more", remaining)))
+			}
+			break
+		}
 
-	elapsed := time.Since(m.startTime).Round(time.Second)
-	elapsedLine := StyleHelpDesc.Render(fmt.Sprintf("\nElapsed: %s", elapsed))
+		checkbox := "[ ]"
+		style := StyleHelpDesc
+		if task.Completed {
+			checkbox = "[✓]"
+			style = StyleCircuitClosed
+		}
 
-	keybindings := fmt.Sprintf(`
- %s %s Run/Restart loop
- %s %s Pause/Resume
- %s %s Toggle log view
- %s %s Show help
- %s %s Quit
- `,
-		StyleHelpKey.Render("r"), StyleHelpDesc.Render("-"),
-		StyleHelpKey.Render("p"), StyleHelpDesc.Render("-"),
-		StyleHelpKey.Render("l"), StyleHelpDesc.Render("-"),
-		StyleHelpKey.Render("?"), StyleHelpDesc.Render("-"),
-		StyleHelpKey.Render("q"), StyleHelpDesc.Render("Quit (or Ctrl+C)"))
+		// Truncate long task names
+		text := task.Text
+		maxLen := width - 10
+		if len(text) > maxLen {
+			text = text[:maxLen-3] + "..."
+		}
 
-	return header + "\n" + statusLine + statusDetail + elapsedLine + keybindings
+		lines = append(lines, style.Render(fmt.Sprintf("    %s %s", checkbox, text)))
+		shown++
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) renderLogsView() string {
-	header := StyleHeader.Render("Logs - Press 'l' to return")
+	width := m.width
+	if width < 60 {
+		width = 60
+	}
 
-	logContent := ""
+	header := StyleHeader.Copy().Width(width).Render("Logs - Press 'l' to return")
+
+	// Show last 30 log lines
 	start := len(m.logs) - 30
 	if start < 0 {
 		start = 0
 	}
 
+	logContent := ""
 	for i := start; i < len(m.logs); i++ {
 		logContent += m.logs[i] + "\n"
 	}
@@ -335,11 +522,27 @@ func (m Model) renderLogsView() string {
 		logContent = StyleHelpDesc.Render("No logs yet\n")
 	}
 
-	return header + "\n" + StyleLog.Render(logContent)
+	// Footer
+	footer := StyleStatus.Copy().Width(width).Render(
+		fmt.Sprintf(" %s Return to status", StyleHelpKey.Render("l")),
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		header,
+		"",
+		logContent,
+		"",
+		footer,
+	)
 }
 
 func (m Model) renderErrorView() string {
-	header := StyleHeader.Render("Ralph Codex - Error")
+	width := m.width
+	if width < 60 {
+		width = 60
+	}
+
+	header := StyleHeader.Copy().Width(width).Render("Ralph Codex - Error")
 
 	errorMsg := StyleErrorMsg.Render(fmt.Sprintf("\nError: %v\n", m.err))
 
@@ -348,11 +551,34 @@ Press 'r' to retry
 Press 'q' to quit
 `)
 
-	return header + errorMsg + helpText
+	footer := StyleStatus.Copy().Width(width).Render(
+		fmt.Sprintf(" %s Retry  %s Quit", StyleHelpKey.Render("r"), StyleHelpKey.Render("q")),
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		header,
+		"",
+		errorMsg,
+		helpText,
+		"",
+		footer,
+	)
 }
 
 func (m Model) renderCircuitView() string {
-	header := StyleHeader.Render("Circuit Breaker Status")
+	width := m.width
+	if width < 60 {
+		width = 60
+	}
+	height := m.height
+	if height < 20 {
+		height = 20
+	}
+
+	const headerHeight = 3
+	const footerHeight = 1
+
+	header := StyleHeader.Copy().Width(width).Render("Circuit Breaker Status")
 
 	// Current state badge
 	circuitState := "CLOSED"
@@ -387,17 +613,32 @@ func (m Model) renderCircuitView() string {
 
 State Explanation:
   %s
-
-Keybindings:
-  %s Return to status
-  %s Reset circuit breaker (if stuck)
 `,
 		StyleInfoMsg.Render("Current State"),
 		stateBadge,
-		StyleDivider.Render(DividerChar),
-		StyleHelpDesc.Render(stateDesc),
-		StyleHelpKey.Render("Esc / l"),
-		StyleHelpKey.Render("R"))
+		StyleDivider.Copy().Width(width-4).Render(strings.Repeat("─", width-4)),
+		StyleHelpDesc.Render(stateDesc))
 
-	return header + circuitInfo
+	middleHeight := height - headerHeight - footerHeight - 2
+	if middleHeight < 10 {
+		middleHeight = 10
+	}
+
+	middleContainer := lipgloss.NewStyle().
+		Width(width).
+		Height(middleHeight).
+		Render(circuitInfo)
+
+	// Footer
+	footer := StyleStatus.Copy().Width(width).Render(
+		fmt.Sprintf(" %s Return to status  %s Reset circuit breaker",
+			StyleHelpKey.Render("l"),
+			StyleHelpKey.Render("R")),
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		header,
+		middleContainer,
+		footer,
+	)
 }

@@ -47,17 +47,16 @@ var (
 // Progress bar styles
 var (
 	StyleProgressEmpty = lipgloss.NewStyle().
-				Foreground(BgHighlight).
-				Width(40)
+				Foreground(TextMuted)
+
+	StyleProgressFilled = lipgloss.NewStyle().
+				Foreground(ColorAccent)
 
 	StyleProgressFull = lipgloss.NewStyle().
-				Foreground(ColorAccent).
-				Width(40)
+				Foreground(ColorAccent)
 
 	StyleProgressBar = lipgloss.NewStyle().
-				Foreground(TextPrimary).
-				Background(ColorAccent).
-				Width(40)
+				Foreground(ColorAccent)
 )
 
 // Circuit breaker styles

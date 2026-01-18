@@ -16,8 +16,32 @@ build:
 	$(GO) build $(GOFLAGS) -o $(BINARY) $(CMD_PATH)
 
 ## install: Install ralph to $GOPATH/bin or $HOME/go/bin
-install:
+install: install-bin install-templates install-sdk
+
+## install-bin: Install Go binary
+install-bin:
 	$(GO) install $(GOFLAGS) $(CMD_PATH)
+
+## install-templates: Install project templates to ~/.ralph/templates
+install-templates:
+	@echo "Installing templates to ~/.ralph/templates..."
+	@mkdir -p ~/.ralph/templates
+	@cp -r templates/* ~/.ralph/templates/
+	@echo "Templates installed successfully"
+
+## install-sdk: Install Codex SDK runner and npm dependencies
+install-sdk:
+	@echo "Installing Codex SDK runner..."
+	@mkdir -p ~/.ralph/bin
+	@cp src/codex_runner.js ~/.ralph/bin/
+	@chmod +x ~/.ralph/bin/codex_runner.js
+	@if [ -f package.json ]; then \
+		npm install; \
+		echo "Codex SDK dependencies installed"; \
+	else \
+		echo "Warning: package.json not found, skipping npm install"; \
+	fi
+	@echo "Codex SDK runner installed to ~/.ralph/bin/codex_runner.js"
 
 ## test: Run all tests
 test:
@@ -89,7 +113,10 @@ help:
 	@echo "Available targets:"
 	@echo "  all              Build, test, and lint"
 	@echo "  build            Build the ralph binary"
-	@echo "  install          Install ralph to GOPATH/bin"
+	@echo "  install          Install ralph, templates, and SDK runner"
+	@echo "  install-bin      Install Go binary only"
+	@echo "  install-templates Install project templates only"
+	@echo "  install-sdk      Install Codex SDK runner only"
 	@echo "  test             Run all tests"
 	@echo "  test-integration Run integration tests"
 	@echo "  test-verbose     Run tests with verbose output"

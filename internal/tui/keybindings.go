@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Keybinding represents a keybinding help entry
@@ -104,19 +106,47 @@ func GetKeybindingHelp() string {
 
 // RenderHelpScreen returns the full help screen
 func (m Model) renderHelpView() string {
-	header := StyleHeader.Render("Ralph Codex - Help")
+	width := m.width
+	if width < 60 {
+		width = 60
+	}
+	height := m.height
+	if height < 20 {
+		height = 20
+	}
+
+	const headerHeight = 3
+	const footerHeight = 1
+
+	header := StyleHeader.Copy().Width(width).Render("Ralph Codex - Help")
 
 	version := StyleHelpDesc.Render("Version 1.0.0")
 
-	divider := StyleDivider.Render(DividerChar)
+	divider := StyleDivider.Copy().Width(width).Render(strings.Repeat("─", width))
 
 	helpContent := GetKeybindingHelp()
 
-	footer := fmt.Sprintf(`
-%s
-Press '?' to return to status view
-`,
-		StyleInfoMsg.Render("Tip: Use --monitor flag for TUI mode"))
+	middleContent := version + "\n" + divider + "\n\n" + helpContent
+	middleHeight := height - headerHeight - footerHeight - 2
+	if middleHeight < 10 {
+		middleHeight = 10
+	}
 
-	return header + "\n" + version + "\n" + divider + "\n\n" + helpContent + footer
+	middleContainer := lipgloss.NewStyle().
+		Width(width).
+		Height(middleHeight).
+		Render(middleContent)
+
+	// Footer
+	footer := StyleStatus.Copy().Width(width).Render(
+		fmt.Sprintf(" %s Return to status  %s",
+			StyleHelpKey.Render("?"),
+			StyleInfoMsg.Render("Tip: Use --monitor flag for TUI mode")),
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		header,
+		middleContainer,
+		footer,
+	)
 }

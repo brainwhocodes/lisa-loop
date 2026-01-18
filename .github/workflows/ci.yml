@@ -68,11 +68,52 @@ jobs:
         with:
           go-version: '1.23'
 
-      - name: Download dependencies
+      - name: Download Go dependencies
         run: go mod download
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install npm dependencies
+        run: npm install
 
       - name: Build
         run: go build -v -o ralph ./cmd/ralph
 
       - name: Test binary
         run: ./ralph --help
+
+  test-bats:
+    name: BATS Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          go mod download
+          npm install
+
+      - name: Install BATS
+        run: |
+          git clone https://github.com/bats-core/bats-core.git /tmp/bats
+          cd /tmp/bats
+          git checkout v1.12.0
+          ./install.sh /usr/local
+
+      - name: Run BATS tests
+        run: npm test

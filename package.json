@@ -2,24 +2,15 @@
   "name": "ralph-codex",
   "version": "1.0.0",
   "description": "Autonomous AI development loop with intelligent exit detection and rate limiting",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs",
-    "example": "examples",
-    "test": "tests"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frankbria/ralph-claude-code.git"
   },
   "scripts": {
     "test": "bats tests/unit/ tests/integration/",
     "test:unit": "bats tests/unit/",
     "test:integration": "bats tests/integration/",
     "test:e2e": "bats tests/e2e/"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/frankbria/ralph-claude-code.git"
-  },
-  "dependencies": {
-    "@openai/codex-sdk": "^1.0.0"
   },
   "keywords": [],
   "author": "",

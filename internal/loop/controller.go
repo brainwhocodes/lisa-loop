@@ -21,15 +21,31 @@ type Config struct {
 	ResetCircuit bool
 }
 
+// LoopEvent represents an event from the loop controller
+type LoopEvent struct {
+	Type        string // "loop_update", "log", "state_change", "status"
+	LoopNumber  int
+	CallsUsed   int
+	Status      string
+	LogMessage  string
+	LogLevel    string // INFO, WARN, ERROR, SUCCESS
+	CircuitState string
+}
+
+// EventCallback is called when the controller has an update
+type EventCallback func(event LoopEvent)
+
 // Controller manages the main Ralph loop
 type Controller struct {
-	config      ControllerConfig
-	rateLimiter *RateLimiter
-	breaker     *circuit.Breaker
-	codexRunner *codex.Runner
-	loopNum     int
-	lastOutput  string
-	shouldStop  bool
+	config        ControllerConfig
+	rateLimiter   *RateLimiter
+	breaker       *circuit.Breaker
+	codexRunner   *codex.Runner
+	loopNum       int
+	lastOutput    string
+	shouldStop    bool
+	eventCallback EventCallback
+	paused        bool
 }
 
 // ControllerConfig holds configuration for the loop controller
@@ -58,41 +74,110 @@ func NewController(config Config, rateLimiter *RateLimiter, breaker *circuit.Bre
 			MaxDuration:   time.Duration(config.Timeout) * time.Second,
 			CheckInterval: 5 * time.Second,
 		},
-		rateLimiter: rateLimiter,
-		breaker:     breaker,
-		codexRunner: codexRunner,
-		loopNum:     0,
-		lastOutput:  "",
-		shouldStop:  false,
+		rateLimiter:   rateLimiter,
+		breaker:       breaker,
+		codexRunner:   codexRunner,
+		loopNum:       0,
+		lastOutput:    "",
+		shouldStop:    false,
+		eventCallback: nil,
+		paused:        false,
 	}
+}
+
+// SetEventCallback sets the callback for loop events
+func (c *Controller) SetEventCallback(cb EventCallback) {
+	c.eventCallback = cb
+}
+
+// emit sends an event to the callback if set
+func (c *Controller) emit(event LoopEvent) {
+	if c.eventCallback != nil {
+		c.eventCallback(event)
+	}
+}
+
+// emitLog sends a log event
+func (c *Controller) emitLog(level, message string) {
+	c.emit(LoopEvent{
+		Type:       "log",
+		LogMessage: message,
+		LogLevel:   level,
+	})
+}
+
+// emitUpdate sends a loop update event
+func (c *Controller) emitUpdate(status string) {
+	c.emit(LoopEvent{
+		Type:         "loop_update",
+		LoopNumber:   c.loopNum,
+		CallsUsed:    c.rateLimiter.CallsMade(),
+		Status:       status,
+		CircuitState: c.breaker.GetState().String(),
+	})
+}
+
+// Pause pauses the loop
+func (c *Controller) Pause() {
+	c.paused = true
+	c.emitLog("INFO", "Loop paused")
+}
+
+// Resume resumes the loop
+func (c *Controller) Resume() {
+	c.paused = false
+	c.emitLog("INFO", "Loop resumed")
+}
+
+// IsPaused returns whether the loop is paused
+func (c *Controller) IsPaused() bool {
+	return c.paused
+}
+
+// Stop signals the loop to stop
+func (c *Controller) Stop() {
+	c.shouldStop = true
 }
 
 // Run executes the main loop
 func (c *Controller) Run(ctx stdcontext.Context) error {
-	fmt.Printf("\n🚀 Starting Ralph Codex loop (max %d calls)...\n", c.config.MaxLoops)
+	c.emitLog("INFO", fmt.Sprintf("Starting Ralph Codex loop (max %d calls)", c.config.MaxLoops))
+	c.emitUpdate("starting")
 
 	for {
+		// Check if paused
+		if c.paused {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
 		if c.shouldStop {
-			fmt.Println("\n✅ Loop stopped")
+			c.emitLog("SUCCESS", "Loop stopped")
+			c.emitUpdate("stopped")
 			return nil
 		}
 
 		select {
 		case <-ctx.Done():
-			fmt.Println("\n🛑 Loop cancelled")
+			c.emitLog("WARN", "Loop cancelled")
+			c.emitUpdate("cancelled")
 			return ctx.Err()
 		default:
+			c.emitUpdate("running")
+
 			// Execute one iteration
 			err := c.ExecuteLoop(ctx)
 
 			if err != nil {
-				fmt.Printf("\n❌ Loop iteration error: %v\n", err)
+				c.emitLog("ERROR", fmt.Sprintf("Loop iteration error: %v", err))
+				c.emitUpdate("error")
 				return err
 			}
 
 			// Check if we should stop
 			if c.ShouldContinue() {
-				fmt.Printf("\n✅ Ralph Codex loop complete after %d iterations\n", c.loopNum)
+				c.emitLog("SUCCESS", fmt.Sprintf("Ralph Codex loop complete after %d iterations", c.loopNum))
+				c.emitUpdate("complete")
 				return nil
 			}
 
@@ -103,25 +188,40 @@ func (c *Controller) Run(ctx stdcontext.Context) error {
 
 // ExecuteLoop executes a single loop iteration
 func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
+	// Check if paused
+	if c.paused {
+		time.Sleep(100 * time.Millisecond)
+		return nil
+	}
+
+	c.emitUpdate("executing")
+
 	// Check rate limit
 	if !c.rateLimiter.CanMakeCall() {
-		fmt.Printf("\n⏱️  Rate limit reached. Calls remaining: %d\n", c.rateLimiter.CallsRemaining())
+		c.emitLog("WARN", fmt.Sprintf("Rate limit reached. Calls remaining: %d", c.rateLimiter.CallsRemaining()))
+		c.emitUpdate("rate_limited")
 		return c.rateLimiter.WaitForReset(ctx)
 	}
 
 	// Check circuit breaker
 	if c.breaker.ShouldHalt() {
+		c.emitLog("ERROR", "Circuit breaker is OPEN, halting execution")
+		c.emitUpdate("circuit_open")
 		return fmt.Errorf("circuit breaker is OPEN, halting execution")
 	}
 
 	// Load prompt and fix plan
 	prompt, err := GetPrompt()
 	if err != nil {
+		c.emitLog("ERROR", fmt.Sprintf("Failed to load prompt: %v", err))
+		c.emitUpdate("error")
 		return fmt.Errorf("failed to load prompt: %w", err)
 	}
 
 	tasks, err := LoadFixPlan()
 	if err != nil {
+		c.emitLog("ERROR", fmt.Sprintf("Failed to load fix plan: %v", err))
+		c.emitUpdate("error")
 		return fmt.Errorf("failed to load fix plan: %w", err)
 	}
 
@@ -136,13 +236,16 @@ func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
 
 	loopContext, err := BuildContext("", c.loopNum+1, remainingTasks, circuitState, c.lastOutput)
 	if err != nil {
+		c.emitLog("ERROR", fmt.Sprintf("Failed to build context: %v", err))
+		c.emitUpdate("error")
 		return fmt.Errorf("failed to build context: %w", err)
 	}
 
 	promptWithContext := InjectContext(prompt, loopContext)
 
 	// Execute Codex
-	fmt.Printf("\n🔄 Loop %d: Executing Codex...\n", c.loopNum+1)
+	c.emitLog("INFO", fmt.Sprintf("Loop %d: Executing Codex", c.loopNum+1))
+	c.emitUpdate("codex_running")
 	output, _, err := c.codexRunner.Run(promptWithContext)
 
 	if err != nil {
@@ -151,10 +254,14 @@ func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
 
 		// Record error in circuit breaker
 		c.breaker.RecordError(err.Error())
+		c.emitLog("ERROR", fmt.Sprintf("Codex execution failed: %v", err))
+		c.emitUpdate("execution_error")
 		return err
 	}
 
 	c.lastOutput = fmt.Sprintf("Success: %s", output[:min(200, len(output))])
+	c.emitLog("SUCCESS", fmt.Sprintf("Loop %d completed successfully", c.loopNum+1))
+	c.emitUpdate("execution_complete")
 
 	// Analyze output for exit conditions
 	// TODO: This will be implemented in response analysis package
@@ -169,6 +276,8 @@ func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
 
 	err = c.breaker.RecordResult(c.loopNum, filesChanged, hasErrors)
 	if err != nil {
+		c.emitLog("ERROR", fmt.Sprintf("Failed to record result: %v", err))
+		c.emitUpdate("error")
 		return err
 	}
 

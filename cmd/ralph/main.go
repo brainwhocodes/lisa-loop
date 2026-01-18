@@ -16,17 +16,17 @@ import (
 )
 
 func main() {
+	// Find command and separate from flags
+	args := os.Args[1:]
+	command, flagArgs := extractCommand(args)
+
 	var (
-		command     string
-		backend     string
-		projectDir  string
-		promptFile  string
-		maxCalls    int
-		timeout     int
-		useMonitor  bool
-		verbose     bool
-		showHelp    bool
-		showVersion bool
+		projectDir string
+		promptFile string
+		maxCalls   int
+		timeout    int
+		useMonitor bool
+		verbose    bool
 
 		setupName  string
 		withGit    bool
@@ -34,35 +34,25 @@ func main() {
 		importName string
 	)
 
-	flag.StringVar(&command, "command", "run", "Command to run (run|setup|import|status|reset-circuit)")
-	flag.StringVar(&backend, "backend", "cli", "Codex backend (cli|sdk)")
-	flag.StringVar(&projectDir, "project", ".", "Project directory")
-	flag.StringVar(&promptFile, "prompt", "PROMPT.md", "Prompt file")
-	flag.IntVar(&maxCalls, "calls", 100, "Max API calls per hour")
-	flag.IntVar(&timeout, "timeout", 600, "Codex timeout (seconds)")
-	flag.BoolVar(&useMonitor, "monitor", false, "Enable integrated monitoring")
-	flag.BoolVar(&verbose, "verbose", false, "Verbose output")
-	flag.BoolVar(&showHelp, "help", false, "Show help")
-	flag.BoolVar(&showHelp, "h", false, "Show help (shorthand)")
-	flag.BoolVar(&showVersion, "version", false, "Show version")
+	fs := flag.NewFlagSet("ralph", flag.ExitOnError)
+	fs.BoolVar(&useMonitor, "monitor", false, "Enable integrated monitoring")
+	fs.BoolVar(&verbose, "verbose", false, "Verbose output")
 
-	flag.StringVar(&setupName, "name", "", "Project name (for setup command)")
-	flag.BoolVar(&withGit, "git", true, "Initialize git repository (for setup command)")
+	fs.StringVar(&projectDir, "project", ".", "Project directory")
+	fs.StringVar(&promptFile, "prompt", "PROMPT.md", "Prompt file")
+	fs.IntVar(&maxCalls, "calls", 100, "Max API calls per hour")
+	fs.IntVar(&timeout, "timeout", 600, "Codex timeout (seconds)")
 
-	flag.StringVar(&importSrc, "source", "", "Source file to import (for import command)")
-	flag.StringVar(&importName, "import-name", "", "Project name (for import command, auto-detect if empty)")
+	fs.StringVar(&setupName, "name", "", "Project name (for setup command)")
+	fs.BoolVar(&withGit, "git", true, "Initialize git repository (for setup command)")
 
-	flag.Parse()
+	fs.StringVar(&importSrc, "source", "", "Source file to import (for import command)")
+	fs.StringVar(&importName, "import-name", "", "Project name (for import command, auto-detect if empty)")
 
-	if showHelp {
-		printHelp()
-		os.Exit(0)
-	}
+	fs.Usage = printHelp
 
-	if showVersion {
-		fmt.Println("Ralph Codex v1.0.0")
-		fmt.Println("Charm TUI scaffold - Complete")
-		os.Exit(0)
+	if err := fs.Parse(flagArgs); err != nil {
+		os.Exit(1)
 	}
 
 	switch command {
@@ -74,8 +64,26 @@ func main() {
 		handleStatusCommand(projectDir)
 	case "reset-circuit":
 		handleResetCircuitCommand(projectDir)
+	case "run", "help", "version":
+		handleSubcommands(command, projectDir, promptFile, maxCalls, timeout, useMonitor, verbose)
 	default:
-		handleRunCommand(backend, projectDir, promptFile, maxCalls, timeout, useMonitor, verbose)
+		fmt.Fprintf(os.Stderr, "Error: unknown command '%s'\n\n", command)
+		printHelp()
+		os.Exit(1)
+	}
+}
+
+func handleSubcommands(command, projectDir, promptFile string, maxCalls, timeout int, useMonitor, verbose bool) {
+	switch command {
+	case "help", "--help", "-h":
+		printHelp()
+		os.Exit(0)
+	case "version", "--version":
+		fmt.Println("Ralph Codex v1.0.0")
+		fmt.Println("Charm TUI scaffold - Complete")
+		os.Exit(0)
+	default:
+		handleRunCommand(projectDir, promptFile, maxCalls, timeout, useMonitor, verbose)
 	}
 }
 
@@ -217,7 +225,7 @@ func handleResetCircuitCommand(projectPath string) {
 	fmt.Println("  ralph --monitor")
 }
 
-func handleRunCommand(backend string, projectPath string, promptFile string, maxCalls int, timeout int, useMonitor bool, verbose bool) {
+func handleRunCommand(projectPath string, promptFile string, maxCalls int, timeout int, useMonitor bool, verbose bool) {
 	if err := os.Chdir(projectPath); err != nil {
 		fmt.Fprintf(os.Stderr, "Error changing to project directory: %v\n", err)
 		os.Exit(1)
@@ -230,7 +238,7 @@ func handleRunCommand(backend string, projectPath string, promptFile string, max
 	}
 
 	config := loop.Config{
-		Backend:      backend,
+		Backend:      "cli",
 		ProjectPath:  projectPath,
 		PromptPath:   promptFile,
 		MaxCalls:     maxCalls,
@@ -256,7 +264,6 @@ func handleRunCommand(backend string, projectPath string, promptFile string, max
 func runWithMonitor(ctx context.Context, controller *loop.Controller, config loop.Config, verbose bool) {
 	fmt.Printf("🚀 Starting Ralph Codex with TUI monitoring (max %d calls)...\n", config.MaxCalls)
 
-	// Convert loop.Config to codex.Config for TUI
 	tuiConfig := codex.Config{
 		Backend:      config.Backend,
 		ProjectPath:  config.ProjectPath,
@@ -267,7 +274,7 @@ func runWithMonitor(ctx context.Context, controller *loop.Controller, config loo
 		ResetCircuit: false,
 	}
 
-	program := tui.NewProgram(tuiConfig)
+	program := tui.NewProgram(tuiConfig, controller)
 	if err := program.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running TUI: %v\n", err)
 		os.Exit(1)
@@ -278,6 +285,30 @@ func runHeadless(ctx context.Context, controller *loop.Controller, config loop.C
 	fmt.Println("🚀 Starting Ralph Codex in headless mode...")
 	fmt.Println("Press Ctrl+C to stop")
 	fmt.Println()
+
+	// Set up event callback to print logs in headless mode
+	controller.SetEventCallback(func(event loop.LoopEvent) {
+		switch event.Type {
+		case "log":
+			levelEmoji := ""
+			switch event.LogLevel {
+			case "INFO":
+				levelEmoji = "ℹ️ "
+			case "WARN":
+				levelEmoji = "⚠️ "
+			case "ERROR":
+				levelEmoji = "❌"
+			case "SUCCESS":
+				levelEmoji = "✅"
+			}
+			fmt.Printf("%s %s\n", levelEmoji, event.LogMessage)
+		case "loop_update":
+			if verbose {
+				fmt.Printf("📊 Loop %d | Calls: %d | Status: %s | Circuit: %s\n",
+					event.LoopNumber, event.CallsUsed, event.Status, event.CircuitState)
+			}
+		}
+	})
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -319,6 +350,41 @@ func setupGracefulShutdown(cancel context.CancelFunc, controller *loop.Controlle
 	}()
 }
 
+func isFlag(arg string) bool {
+	return len(arg) > 0 && arg[0] == '-'
+}
+
+func isCommand(arg string) bool {
+	validCommands := map[string]bool{
+		"run":           true,
+		"setup":         true,
+		"import":        true,
+		"status":        true,
+		"reset-circuit": true,
+		"help":          true,
+		"version":       true,
+	}
+	return validCommands[arg]
+}
+
+func extractCommand(args []string) (string, []string) {
+	command := "run"
+	flagArgs := []string{}
+
+	for i, arg := range args {
+		if isCommand(arg) {
+			command = arg
+			// Collect flags before and after the command
+			flagArgs = append(flagArgs, args[:i]...)
+			flagArgs = append(flagArgs, args[i+1:]...)
+			return command, flagArgs
+		}
+	}
+
+	// No command found, use default and all args are flags
+	return command, args
+}
+
 func printHelp() {
 	fmt.Println("Ralph Codex - Autonomous AI Development Loop with Charm TUI")
 	fmt.Println("")
@@ -331,17 +397,16 @@ func printHelp() {
 	fmt.Println("  import              Import PRD or specification document")
 	fmt.Println("  status             Show project status")
 	fmt.Println("  reset-circuit       Reset circuit breaker state")
+	fmt.Println("  help               Show this help")
+	fmt.Println("  version            Show version")
 	fmt.Println("")
 	fmt.Println("Options:")
-	fmt.Println("  --backend <cli|sdk>   Codex backend (default: cli)")
 	fmt.Println("  --project <path>        Project directory (default: .)")
 	fmt.Println("  --prompt <file>         Prompt file (default: PROMPT.md)")
 	fmt.Println("  --calls <number>        Max API calls per hour (default: 100)")
 	fmt.Println("  --timeout <seconds>      Codex timeout (default: 600)")
 	fmt.Println("  --monitor               Enable integrated TUI monitoring")
 	fmt.Println("  --verbose              Verbose output")
-	fmt.Println("  -h, --help             Show this help")
-	fmt.Println("  --version              Show version")
 	fmt.Println("")
 	fmt.Println("Setup command options:")
 	fmt.Println("  --name <project-name>   Project name (required)")
