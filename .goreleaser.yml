@@ -1,0 +1,80 @@
+# Ralph Codex - Goreleaser configuration
+
+project_name: ralph
+dist: dist
+
+before:
+  hooks:
+    - go mod download
+    - go mod tidy
+
+builds:
+  - main: ./cmd/ralph
+    binary: ralph
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.Version={{.Version}}
+      - -X main.Commit={{.Commit}}
+      - -X main.Date={{.Date}}
+
+archives:
+  - id: ralph
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^style:'
+      - '^chore:'
+
+release:
+  github:
+    owner: brainwhocodes
+    name: ralph-codex
+  mode: replace
+
+nfpms:
+  - maintainer: Frank Bria <frank@example.com>
+    description: Autonomous AI Development Loop with Charm TUI
+    homepage: https://github.com/brainwhocodes/ralph-codex
+    license: MIT
+    formats:
+      - deb
+      - rpm
+
+brews:
+  - name: ralph
+    repository:
+      owner: brainwhocodes
+      name: homebrew-tap
+    description: Autonomous AI Development Loop with Charm TUI
+    homepage: https://github.com/brainwhocodes/ralph-codex
+    license: MIT
+
+scoops:
+  - name: ralph
+    description: Autonomous AI Development Loop with Charm TUI
+    homepage: https://github.com/brainwhocodes/ralph-codex
+    license: MIT
