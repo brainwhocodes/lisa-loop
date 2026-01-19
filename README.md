@@ -2,7 +2,6 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
-![Tests](https://img.shields.io/badge/tests-400%2B%20passing-green)
 [![GitHub Issues](https://img.shields.io/github/issues/brainwhocodes/ralph-codex)](https://github.com/brainwhocodes/ralph-codex/issues)
 
 > **Autonomous AI development loop with Charm TUI and intelligent exit detection**
@@ -10,12 +9,12 @@
 Ralph Codex is a modern Go implementation of Geoffrey Huntley's autonomous development technique, featuring a beautiful terminal user interface powered by Charm libraries. It enables continuous autonomous development cycles where Codex iteratively improves your project until completion, with built-in safeguards to prevent infinite loops and API overuse.
 
 **Features**:
-- 🎨 **Modern TUI** - Beautiful terminal interface with real-time updates
-- 🔄 **Dual Backend Support** - Codex CLI and SDK backends
+- 🎨 **Modern TUI** - Beautiful terminal interface with real-time task progress and logs
+- 🔄 **Codex Integration** - Powered by Codex CLI
 - ⚡ **Session Continuity** - Preserve context across loop iterations
 - 🛡️ **Circuit Breaker** - Prevent runaway loops with advanced error detection
-- 📊 **Real-time Monitoring** - Live status and log viewer
-- 🎯 **Intelligent Exit** - Semantic understanding of completion signals
+- 📊 **Real-time Monitoring** - Live status, task checklist, and integrated logs
+- 🎯 **Intelligent Exit** - Task-based completion with automatic detection
 
 ## Quick Start
 
@@ -62,12 +61,11 @@ ralph --command run --monitor
 ## CLI Options
 
 ```bash
-ralph --command run [OPTIONS]
-  --backend <cli|sdk>   Codex backend (default: cli)
+ralph [OPTIONS]
   --project <path>        Project directory (default: .)
   --prompt <file>         Prompt file (default: PROMPT.md)
-  --calls <number>        Max API calls per hour (default: 100)
-  --timeout <seconds>      Codex timeout (default: 600)
+  --calls <number>        Max loop iterations (default: 3)
+  --timeout <seconds>     Codex timeout (default: 600)
   --monitor               Enable integrated TUI monitoring
   --verbose               Verbose output
 ```
@@ -94,11 +92,11 @@ Loop execution halted - press `R` to reset
 
 ## Features
 
-- **Codex Backend** - Autonomous development loop powered by Codex CLI and Codex SDK
-- **Intelligent Exit Detection** - Dual-condition check requiring both completion indicators AND explicit EXIT_SIGNAL
+- **Codex Backend** - Autonomous development loop powered by Codex CLI
+- **Task-Based Completion** - Automatically detects when all tasks in `@fix_plan.md` are complete
 - **Session Continuity** - Preserves context across loop iterations with automatic session management
-- **Rate Limiting** - Built-in API call management with hourly limits and countdown timers
-- **Live Monitoring** - Real-time dashboard showing loop status, progress, and logs
+- **Loop Management** - Built-in iteration limits with configurable max loops
+- **Live Monitoring** - Real-time dashboard showing loop status, task progress, and integrated logs
 - **Task Management** - Structured approach with prioritized task lists and progress tracking
 - **Circuit Breaker** - Advanced error detection with two-stage filtering and automatic recovery
 
@@ -155,12 +153,8 @@ Run tests with Makefile:
 make test          # All tests
 make test-verbose  # Verbose output
 make test-coverage # Coverage report
-make lint         # Code linting
+make lint          # Code linting
 ```
-
-Current test status:
-- **400+ tests** across all packages
-- **100% pass rate** on TUI and model tests
 
 ## Contributing
 
@@ -173,11 +167,11 @@ This project is licensed under MIT License - see [LICENSE](LICENSE) file for det
 ## Acknowledgments
 
 - Inspired by [Ralph technique](https://ghuntley.com/ralph/) created by Geoffrey Huntley
-- Built for [Codex](https://openai.com) by OpenAI
-- Powered by [Charm libraries](https://charm.sh/)
+- Powered by [Codex](https://openai.com/codex)
+- TUI built with [Charm libraries](https://charm.sh/) (Bubble Tea, Lipgloss)
 - Community feedback and contributions
 
 ## Related Projects
 
-- [Codex](https://openai.com) - The AI coding assistant that powers Ralph
-- [Aider](https://github.com/paul-gauthier/aider) - Original Ralph technique implementation
+- [Codex](https://openai.com/codex) - The AI coding assistant that powers Ralph
+- [Aider](https://github.com/paul-gauthier/aider) - AI pair programming tool

@@ -4,14 +4,14 @@ This file provides guidance to AI coding agents (Codex, Claude Code, etc.) when 
 
 ## Repository Overview
 
-Ralph Codex is an autonomous AI development loop system written in **Go**. It enables continuous development cycles with intelligent exit detection, circuit breaker patterns, and rate limiting. Ralph executes Codex repeatedly in a managed loop, analyzing responses to determine when work is complete.
+Ralph Codex is an autonomous AI development loop system written in **Go**. It enables continuous development cycles with intelligent exit detection, circuit breaker patterns, and loop management. Ralph executes Codex repeatedly in a managed loop, analyzing task completion to determine when work is complete.
 
 ## Technology Stack
 
 - **Language**: Go 1.21+
 - **TUI Framework**: [Bubble Tea](https://github.com/charmbracelet/bubbletea) (terminal UI)
-- **CLI**: Native Go with goreleaser for cross-platform builds
-- **AI Backend**: OpenAI Codex CLI (`codex exec --json`)
+- **Styling**: [Lipgloss](https://github.com/charmbracelet/lipgloss)
+- **AI Backend**: Codex CLI (`codex exec --json`)
 - **Build**: `go build` / `make`
 - **Test**: `go test ./...`
 
@@ -26,22 +26,26 @@ ralph-codex/
 │   ├── circuit/               # Circuit breaker pattern
 │   │   └── breaker.go         # CLOSED/HALF_OPEN/OPEN states
 │   ├── codex/                 # Codex CLI execution
-│   │   ├── config.go          # Configuration structs
+│   │   ├── config.go          # Config type alias to unified config
 │   │   └── runner.go          # Execute codex, parse JSONL output
+│   ├── config/                # Unified configuration
+│   │   └── config.go          # Shared Config struct
 │   ├── loop/                  # Main loop controller
 │   │   ├── context.go         # Build loop context, load fix plan
 │   │   ├── controller.go      # Orchestrate loop iterations
-│   │   └── ratelimit.go       # API call rate limiting
+│   │   └── ratelimit.go       # Loop iteration management
 │   ├── project/               # Project management
 │   │   ├── import.go          # PRD/spec import to Ralph format
 │   │   └── setup.go           # Create new Ralph projects
 │   ├── state/                 # State persistence
-│   │   └── files.go           # Atomic file I/O for state
+│   │   └── files.go           # Generic LoadState[T]/SaveState[T] helpers
+│   ├── stats/                 # Statistics interface
+│   │   └── stats.go           # StatsProvider interface
 │   └── tui/                   # Terminal UI
-│       ├── model.go           # Bubble Tea model
+│       ├── model.go           # Bubble Tea model with integrated views
+│       ├── program.go         # Program wrapper
 │       ├── keybindings.go     # Keyboard shortcuts
-│       ├── styles.go          # Lipgloss styling
-│       └── views/             # Status, logs, help views
+│       └── styles.go          # Lipgloss styling, constants, helpers
 ├── templates/                 # Project templates
 │   ├── PROMPT.md
 │   ├── fix_plan.md
@@ -175,25 +179,33 @@ Executes Codex CLI and parses JSONL output:
 
 ```go
 // Build command
-cmd := exec.Command("codex", "exec", "--json", "--skip-git-repo-check")
-if sessionID != "" {
-    cmd.Args = append(cmd.Args, "--resume", "--thread-id", sessionID)
+cmd := exec.Command("codex", "exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access")
+if hasSession {
+    cmd.Args = append(cmd.Args, "resume", "--last")
 }
 cmd.Stdin = strings.NewReader(prompt)
 
-// Parse JSONL stream for thread.started events and messages
-threadID, message, events := ParseJSONLStream(output)
+// Parse JSONL stream for events and messages
+events := ParseJSONLStream(output)
 ```
 
 ### State Persistence (`internal/state/files.go`)
 
-All state is persisted to dot files with atomic writes:
+Uses generic helpers for type-safe state management:
+
+```go
+// Generic load/save helpers
+func LoadState[T any](filename string, defaultVal T) (T, error)
+func SaveState[T any](filename string, value T) error
+```
+
+State files:
 
 | File | Purpose |
 |------|---------|
-| `.call_count` | API calls made this hour |
-| `.last_reset` | Last rate limit reset time |
-| `.codex_session_id` | Codex thread ID for continuity |
+| `.call_count` | Loop iterations completed |
+| `.last_reset` | Last reset time |
+| `.codex_session_id` | Codex session for continuity |
 | `.ralph_session` | Ralph session metadata |
 | `.circuit_breaker_state` | Circuit breaker state |
 | `.exit_signals` | Recent exit signal history |
@@ -202,10 +214,10 @@ All state is persisted to dot files with atomic writes:
 
 Built with Bubble Tea for interactive monitoring:
 
-- **Status view**: Loop number, rate limit progress, circuit state
-- **Logs view**: Scrollable log history
+- **Integrated status view**: Loop number, progress bar, circuit state, task checklist, and logs
 - **Circuit view**: Detailed circuit breaker status
-- **Keybindings**: `r` run, `p` pause, `l` logs, `?` help, `q` quit
+- **Keybindings**: `r` run, `p` pause, `l` logs, `c` circuit, `?` help, `q` quit
+- **Styling**: Centralized in `styles.go` with constants for spinners, log levels, colors
 
 ## Ralph-Managed Project Files
 
@@ -231,10 +243,9 @@ Ralph exits when ANY of these conditions are met:
 
 ## Configuration
 
-### Rate Limiting
-- Default: 100 calls/hour
+### Loop Limits
+- Default: 3 iterations
 - Configurable via `--calls` flag
-- Auto-resets hourly
 
 ### Circuit Breaker Thresholds
 - No progress threshold: 3 loops
@@ -280,7 +291,7 @@ go test -cover ./...
 Ralph integrates with:
 - **Codex CLI**: `codex exec --json` for AI execution
 - **Git**: Expects projects to be git repositories
-- **File system**: State files in project root
+- **File system**: State files in project root (dot files)
 
 ## Troubleshooting
 
