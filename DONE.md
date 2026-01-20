@@ -18,3 +18,22 @@
 - Default max calls set to 10 when backend is `opencode` (vs 3 for cli)
 
 - Updated help text with new backend options section
+
+## Commit 2: OpenCode server client + session persistence
+
+- Created `internal/opencode` package with:
+  - `client.go` - HTTP client wrapper for `/session` and `/session/:id/message` endpoints
+  - `session.go` - Session persistence helpers using `.opencode_session_id` file
+  - `runner.go` - Runner implementation that maps OpenCode responses to the existing output format
+
+- Key features:
+  - Basic auth headers for server authentication
+  - Configurable request timeouts (default: 5 minutes)
+  - Atomic file writes for session persistence
+  - Event emission for TUI compatibility
+
+- Unit tests (`client_test.go`, `session_test.go`) covering:
+  - Auth header verification
+  - Session creation and message sending
+  - Error handling for HTTP errors
+  - Session file persistence and cleanup
