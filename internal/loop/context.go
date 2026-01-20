@@ -8,15 +8,41 @@ import (
 	"strings"
 )
 
-// LoadFixPlan loads remaining tasks from @fix_plan.md
+// LoadFixPlan loads remaining tasks from plan files in order of preference:
+// 1. IMPLEMENTATION_PLAN.md (implementation mode)
+// 2. REFACTOR_PLAN.md (refactor mode)
+// 3. @fix_plan.md (fix mode)
 func LoadFixPlan() ([]string, error) {
-	data, err := os.ReadFile("@fix_plan.md")
-	if err != nil {
-		return nil, fmt.Errorf("failed to read @fix_plan.md: %w", err)
+	// Try plan files in order of preference
+	planFiles := []string{
+		"IMPLEMENTATION_PLAN.md",
+		"REFACTOR_PLAN.md",
+		"@fix_plan.md",
 	}
 
+	var data []byte
+	var err error
+	var planFile string
+
+	for _, pf := range planFiles {
+		data, err = os.ReadFile(pf)
+		if err == nil {
+			planFile = pf
+			break
+		}
+	}
+
+	if planFile == "" {
+		return nil, fmt.Errorf("failed to read plan file (tried %s)", strings.Join(planFiles, ", "))
+	}
+
+	return parseTasksFromPlan(string(data), planFile)
+}
+
+// parseTasksFromPlan extracts checklist tasks from a plan file
+func parseTasksFromPlan(content, filename string) ([]string, error) {
 	var tasks []string
-	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	scanner := bufio.NewScanner(strings.NewReader(content))
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -24,19 +50,26 @@ func LoadFixPlan() ([]string, error) {
 			continue
 		}
 
-		if strings.HasPrefix(line, "- [") || strings.HasPrefix(line, "- [x") {
-			taskText := strings.TrimSpace(line[4:])
-			if strings.HasPrefix(taskText, "[") {
-				taskText = strings.TrimSpace(taskText[3:])
-			}
-			if taskText != "" {
-				tasks = append(tasks, taskText)
+		// Match checklist items: - [ ] or - [x]
+		if strings.HasPrefix(line, "- [") {
+			// Extract the checkbox state and text
+			// Format: "- [ ] task" or "- [x] task"
+			if len(line) >= 6 {
+				checkbox := line[2:5] // "[ ]" or "[x]"
+				taskText := strings.TrimSpace(line[5:])
+
+				// Preserve the checkbox state in the task
+				if checkbox == "[x]" || checkbox == "[X]" {
+					tasks = append(tasks, "[x] "+taskText)
+				} else {
+					tasks = append(tasks, "[ ] "+taskText)
+				}
 			}
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("failed to parse @fix_plan.md: %w", err)
+		return nil, fmt.Errorf("failed to parse %s: %w", filename, err)
 	}
 
 	return tasks, nil
@@ -89,11 +122,21 @@ func GetProjectRoot() (string, error) {
 	}
 
 	for {
-		prompts := []string{"PROMPT.md", "@fix_plan.md", "@AGENT.md", ".git"}
+		// Look for Ralph project markers
+		markers := []string{
+			"IMPLEMENTATION_PLAN.md",
+			"REFACTOR_PLAN.md",
+			"PRD.md",
+			"REFACTOR.md",
+			"AGENTS.md",
+			"@fix_plan.md",
+			"PROMPT.md",
+			".git",
+		}
 		found := false
 
-		for _, promptFile := range prompts {
-			if _, err := os.Stat(filepath.Join(pwd, promptFile)); err == nil {
+		for _, marker := range markers {
+			if _, err := os.Stat(filepath.Join(pwd, marker)); err == nil {
 				found = true
 				break
 			}
@@ -111,23 +154,29 @@ func GetProjectRoot() (string, error) {
 		pwd = parent
 	}
 
-	return "", fmt.Errorf("could not find project root (no PROMPT.md, @fix_plan.md, @AGENT.md, or .git found)")
+	return "", fmt.Errorf("could not find project root (no IMPLEMENTATION_PLAN.md, REFACTOR_PLAN.md, PRD.md, or .git found)")
 }
 
 // CheckProjectRoot verifies we're in a valid Ralph project
 func CheckProjectRoot() error {
-	prompts := []string{"PROMPT.md", "@fix_plan.md"}
-	found := 0
+	// A valid Ralph project needs one of:
+	// 1. PRD.md + IMPLEMENTATION_PLAN.md (implementation mode)
+	// 2. REFACTOR.md + REFACTOR_PLAN.md (refactor mode)
+	// 3. PROMPT.md + @fix_plan.md (fix mode / legacy)
 
-	for _, promptFile := range prompts {
-		if _, err := os.Stat(promptFile); err == nil {
-			found++
-		}
-	}
+	implementationMode := fileExists("PRD.md") && fileExists("IMPLEMENTATION_PLAN.md")
+	refactorMode := fileExists("REFACTOR.md") && fileExists("REFACTOR_PLAN.md")
+	fixMode := fileExists("PROMPT.md") && fileExists("@fix_plan.md")
 
-	if found < 2 {
-		return fmt.Errorf("not a valid Ralph project (found %d/%d required files)", found, len(prompts))
+	if !implementationMode && !refactorMode && !fixMode {
+		return fmt.Errorf("not a valid Ralph project. Need one of: (PRD.md + IMPLEMENTATION_PLAN.md), (REFACTOR.md + REFACTOR_PLAN.md), or (PROMPT.md + @fix_plan.md)")
 	}
 
 	return nil
+}
+
+// fileExists checks if a file exists
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

@@ -92,23 +92,29 @@ func (b *Breaker) RecordError(errorMsg string) error {
 	}
 
 	b.sameErrorHistory = append(b.sameErrorHistory, errorMsg)
+	totalErrors := len(b.sameErrorHistory)
 
-	// Keep only last N errors
-	maxHistory := b.sameErrorThreshold
-	if len(b.sameErrorHistory) > maxHistory {
-		b.sameErrorHistory = b.sameErrorHistory[len(b.sameErrorHistory)-maxHistory:]
+	// Trigger OPEN if threshold exceeded (check before capping)
+	if totalErrors >= b.sameErrorThreshold*2 {
+		b.state = StateOpen
+		// Keep only last N errors for history
+		maxHistory := b.sameErrorThreshold * 2
+		if len(b.sameErrorHistory) > maxHistory {
+			b.sameErrorHistory = b.sameErrorHistory[len(b.sameErrorHistory)-maxHistory:]
+		}
+		return b.SaveState()
 	}
 
 	// Trigger HALF_OPEN if threshold reached
-	if len(b.sameErrorHistory) >= b.sameErrorThreshold && b.state == StateClosed {
+	if totalErrors >= b.sameErrorThreshold && b.state == StateClosed {
 		b.state = StateHalfOpen
 		return b.SaveState()
 	}
 
-	// Trigger OPEN if threshold exceeded
-	if len(b.sameErrorHistory) >= b.sameErrorThreshold*2 {
-		b.state = StateOpen
-		return b.SaveState()
+	// Keep only last N errors
+	maxHistory := b.sameErrorThreshold * 2
+	if len(b.sameErrorHistory) > maxHistory {
+		b.sameErrorHistory = b.sameErrorHistory[len(b.sameErrorHistory)-maxHistory:]
 	}
 
 	return b.SaveState()

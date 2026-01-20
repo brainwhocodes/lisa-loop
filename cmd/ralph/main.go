@@ -34,6 +34,8 @@ func main() {
 		withGit     bool
 		importSrc   string
 		importName  string
+
+		initMode string
 	)
 
 	fs := flag.NewFlagSet("ralph", flag.ExitOnError)
@@ -53,6 +55,8 @@ func main() {
 	fs.StringVar(&importSrc, "source", "", "Source file to import (for import command)")
 	fs.StringVar(&importName, "import-name", "", "Project name (for import command, auto-detect if empty)")
 
+	fs.StringVar(&initMode, "mode", "", "Init mode: implementation, fix, or refactor (auto-detect if empty)")
+
 	fs.Usage = printHelp
 
 	if err := fs.Parse(flagArgs); err != nil {
@@ -60,6 +64,8 @@ func main() {
 	}
 
 	switch command {
+	case "init":
+		handleInitCommand(initMode, projectDir, maxCalls, timeout, verbose)
 	case "setup":
 		handleSetupCommand(setupName, setupPrompt, setupInit, withGit, verbose)
 	case "import":
@@ -89,6 +95,90 @@ func handleSubcommands(command, projectDir, promptFile string, maxCalls, timeout
 	default:
 		handleRunCommand(projectDir, promptFile, maxCalls, timeout, useMonitor, verbose)
 	}
+}
+
+func handleInitCommand(mode string, projectDir string, maxCalls int, timeout int, verbose bool) {
+	if err := os.Chdir(projectDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error changing to project directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Determine init mode
+	var initMode project.InitMode
+	switch mode {
+	case "implementation":
+		initMode = project.ModeImplementation
+	case "fix":
+		initMode = project.ModeFix
+	case "refactor":
+		initMode = project.ModeRefactor
+	case "":
+		// Auto-detect
+		initMode = ""
+	default:
+		fmt.Fprintf(os.Stderr, "Error: unknown mode '%s'. Use: implementation, fix, or refactor\n", mode)
+		os.Exit(1)
+	}
+
+	opts := project.InitOptions{
+		OutputDir: ".",
+		Mode:      initMode,
+		Verbose:   true, // Always verbose during init to show Codex progress
+	}
+
+	fmt.Println("🚀 Initializing Ralph project...")
+	fmt.Println()
+
+	result, err := project.Init(opts)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\n❌ Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if !result.Success {
+		fmt.Fprintf(os.Stderr, "\n❌ Initialization failed\n")
+		os.Exit(1)
+	}
+
+	// Print success message based on mode
+	fmt.Println()
+	fmt.Println("✅ Project initialized successfully!")
+	fmt.Printf("   Mode: %s\n", result.Mode)
+
+	switch result.Mode {
+	case project.ModeImplementation:
+		fmt.Printf("   Created: IMPLEMENTATION_PLAN.md\n")
+		fmt.Printf("   Created: AGENTS.md\n")
+	case project.ModeRefactor:
+		fmt.Printf("   Created: REFACTOR_PLAN.md\n")
+	case project.ModeFix:
+		fmt.Printf("   Created: @fix_plan.md\n")
+	}
+
+	fmt.Println()
+	fmt.Println("🎯 Launching development loop...")
+	fmt.Println()
+
+	// Now launch the TUI
+	config := loop.Config{
+		Backend:      "cli",
+		ProjectPath:  ".",
+		PromptPath:   "PROMPT.md",
+		MaxCalls:     maxCalls,
+		Timeout:      timeout,
+		Verbose:      verbose,
+		ResetCircuit: false,
+	}
+
+	rateLimiter := loop.NewRateLimiter(config.MaxCalls, 1)
+	breaker := circuit.NewBreaker(3, 5)
+	controller := loop.NewController(config, rateLimiter, breaker)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	setupGracefulShutdown(cancel, controller)
+
+	// Always use TUI after init
+	runWithMonitor(ctx, controller, config, verbose)
 }
 
 func handleSetupCommand(projectName string, prompt string, init bool, withGit bool, verbose bool) {
@@ -373,6 +463,7 @@ func isFlag(arg string) bool {
 func isCommand(arg string) bool {
 	validCommands := map[string]bool{
 		"run":           true,
+		"init":          true,
 		"setup":         true,
 		"import":        true,
 		"status":        true,
@@ -409,10 +500,11 @@ func printHelp() {
 	fmt.Println("")
 	fmt.Println("Commands:")
 	fmt.Println("  run (default)      Run autonomous development loop")
+	fmt.Println("  init               Initialize project and launch TUI")
 	fmt.Println("  setup              Create a new Ralph-managed project")
-	fmt.Println("  import              Import PRD or specification document")
+	fmt.Println("  import             Import PRD or specification document")
 	fmt.Println("  status             Show project status")
-	fmt.Println("  reset-circuit       Reset circuit breaker state")
+	fmt.Println("  reset-circuit      Reset circuit breaker state")
 	fmt.Println("  help               Show this help")
 	fmt.Println("  version            Show version")
 	fmt.Println("")
@@ -420,9 +512,12 @@ func printHelp() {
 	fmt.Println("  --project <path>        Project directory (default: .)")
 	fmt.Println("  --prompt <file>         Prompt file (default: PROMPT.md)")
 	fmt.Println("  --calls <number>        Max loop iterations (default: 3)")
-	fmt.Println("  --timeout <seconds>      Codex timeout (default: 600)")
+	fmt.Println("  --timeout <seconds>     Codex timeout (default: 600)")
 	fmt.Println("  --monitor               Enable integrated TUI monitoring")
-	fmt.Println("  --verbose              Verbose output")
+	fmt.Println("  --verbose               Verbose output")
+	fmt.Println("")
+	fmt.Println("Init command options:")
+	fmt.Println("  --mode <mode>           Mode: implementation, fix, or refactor (auto-detect)")
 	fmt.Println("")
 	fmt.Println("Setup command options:")
 	fmt.Println("  --name <project-name>   Project name (required unless --init)")
@@ -436,8 +531,8 @@ func printHelp() {
 	fmt.Println("")
 	fmt.Println("TUI Keybindings:")
 	fmt.Println("  q / Ctrl+c   Quit")
-	fmt.Println("  r             Run/restart loop")
-	fmt.Println("  p             Pause/resume")
-	fmt.Println("  l             Toggle log view")
-	fmt.Println("  ?             Show help")
+	fmt.Println("  r            Run/restart loop")
+	fmt.Println("  p            Pause/resume")
+	fmt.Println("  l            Toggle log view")
+	fmt.Println("  ?            Show help")
 }

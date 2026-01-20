@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestReadStateFile(t *testing.T) {
@@ -129,9 +130,9 @@ func TestSaveLastReset(t *testing.T) {
 	defer os.Chdir(origDir)
 	os.Chdir(tmpDir)
 
-	// Test: Save last reset
-	parsed, _ := LoadLastReset()
-	err := SaveLastReset(parsed)
+	// Test: Save last reset with a specific time
+	testTime := time.Now().Truncate(time.Second) // Truncate to avoid nanosecond precision issues
+	err := SaveLastReset(testTime)
 
 	if err != nil {
 		t.Errorf("SaveLastReset() error = %v, want nil", err)
@@ -139,8 +140,9 @@ func TestSaveLastReset(t *testing.T) {
 
 	// Verify
 	loaded, _ := LoadLastReset()
-	if loaded.String() != parsed.String() {
-		t.Errorf("SaveLastReset() time mismatch")
+	// Compare at second precision due to JSON serialization
+	if !loaded.Truncate(time.Second).Equal(testTime) {
+		t.Errorf("SaveLastReset() time mismatch: got %v, want %v", loaded, testTime)
 	}
 }
 

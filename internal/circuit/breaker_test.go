@@ -231,6 +231,11 @@ func TestGetStats(t *testing.T) {
 func TestLoadState(t *testing.T) {
 	tmpDir := t.TempDir()
 
+	// Change to tmpDir BEFORE saving state
+	origDir, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
 	testState := map[string]interface{}{
 		"state":             "HALF_OPEN",
 		"no_progress_count": 2,
@@ -239,10 +244,6 @@ func TestLoadState(t *testing.T) {
 	}
 
 	state.SaveCircuitBreakerState(testState)
-
-	origDir, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(origDir)
 
 	loadedBreaker, err := LoadBreakerFromFile()
 

@@ -101,7 +101,7 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 		if opts.Verbose {
 			fmt.Println("Generating customized templates with Codex...")
 		}
-		if err := generateWithCodex(projectPath, opts.Prompt); err != nil {
+		if err := generateTemplatesWithCodex(projectPath, opts.Prompt); err != nil {
 			return nil, fmt.Errorf("failed to generate templates with Codex: %w", err)
 		}
 		codexGeneratedFiles["PROMPT.md"] = true
@@ -154,8 +154,8 @@ func validateProjectName(name string) error {
 	return nil
 }
 
-// generateWithCodex uses Codex to generate customized PROMPT.md and @fix_plan.md
-func generateWithCodex(projectPath string, prompt string) error {
+// generateTemplatesWithCodex uses Codex to generate customized PROMPT.md and @fix_plan.md
+func generateTemplatesWithCodex(projectPath string, prompt string) error {
 	// Build the prompt for Codex
 	codexPrompt := fmt.Sprintf(
 		"Generate a PROMPT.md and @fix_plan.md for a project with this description: %s. Write the files directly.",
@@ -358,21 +358,33 @@ func executeCommand(cmd string) error {
 }
 
 // ValidateProject checks if current directory is a valid Ralph project
+// Valid configurations:
+// - Implementation mode: PRD.md + IMPLEMENTATION_PLAN.md
+// - Refactor mode: REFACTOR.md + REFACTOR_PLAN.md
+// - Fix mode: PROMPT.md + @fix_plan.md
 func ValidateProject() error {
-	requiredFiles := []string{"PROMPT.md", "@fix_plan.md"}
-	missing := []string{}
-
-	for _, file := range requiredFiles {
-		if _, err := os.Stat(file); err != nil {
-			missing = append(missing, file)
-		}
+	// Check for implementation mode
+	_, prdErr := os.Stat("PRD.md")
+	_, implPlanErr := os.Stat("IMPLEMENTATION_PLAN.md")
+	if prdErr == nil && implPlanErr == nil {
+		return nil
 	}
 
-	if len(missing) > 0 {
-		return fmt.Errorf("not a valid Ralph project (missing: %s)", strings.Join(missing, ", "))
+	// Check for refactor mode
+	_, refactorErr := os.Stat("REFACTOR.md")
+	_, refactorPlanErr := os.Stat("REFACTOR_PLAN.md")
+	if refactorErr == nil && refactorPlanErr == nil {
+		return nil
 	}
 
-	return nil
+	// Check for fix mode
+	_, promptErr := os.Stat("PROMPT.md")
+	_, fixPlanErr := os.Stat("@fix_plan.md")
+	if promptErr == nil && fixPlanErr == nil {
+		return nil
+	}
+
+	return fmt.Errorf("not a valid Ralph project. Run 'ralph init' with one of:\n  - PRD.md (creates IMPLEMENTATION_PLAN.md)\n  - REFACTOR.md (creates REFACTOR_PLAN.md)\n  - specs/ folder (creates @fix_plan.md)")
 }
 
 // GetProjectRoot finds the project root directory
@@ -383,6 +395,21 @@ func GetProjectRoot() (string, error) {
 	}
 
 	for {
+		// Check for implementation mode
+		if _, err := os.Stat(filepath.Join(wd, "PRD.md")); err == nil {
+			if _, err := os.Stat(filepath.Join(wd, "IMPLEMENTATION_PLAN.md")); err == nil {
+				return wd, nil
+			}
+		}
+
+		// Check for refactor mode
+		if _, err := os.Stat(filepath.Join(wd, "REFACTOR.md")); err == nil {
+			if _, err := os.Stat(filepath.Join(wd, "REFACTOR_PLAN.md")); err == nil {
+				return wd, nil
+			}
+		}
+
+		// Check for fix mode
 		if _, err := os.Stat(filepath.Join(wd, "PROMPT.md")); err == nil {
 			if _, err := os.Stat(filepath.Join(wd, "@fix_plan.md")); err == nil {
 				return wd, nil
@@ -396,7 +423,7 @@ func GetProjectRoot() (string, error) {
 		wd = parent
 	}
 
-	return "", fmt.Errorf("could not find Ralph project root (no PROMPT.md or @fix_plan.md found)")
+	return "", fmt.Errorf("could not find Ralph project root")
 }
 
 // defaultPromptTemplate returns default PROMPT.md content

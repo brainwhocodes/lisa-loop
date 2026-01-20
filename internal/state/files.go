@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,7 +13,7 @@ import (
 func LoadState[T any](filename string, defaultVal T) (T, error) {
 	data, err := ReadStateFile(filename)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return defaultVal, nil
 		}
 		return defaultVal, err

@@ -16,12 +16,12 @@ type Config = config.Config
 
 // LoopEvent represents an event from the loop controller
 type LoopEvent struct {
-	Type        string // "loop_update", "log", "state_change", "status"
-	LoopNumber  int
-	CallsUsed   int
-	Status      string
-	LogMessage  string
-	LogLevel    string // INFO, WARN, ERROR, SUCCESS
+	Type         string // "loop_update", "log", "state_change", "status"
+	LoopNumber   int
+	CallsUsed    int
+	Status       string
+	LogMessage   string
+	LogLevel     string // INFO, WARN, ERROR, SUCCESS
 	CircuitState string
 }
 

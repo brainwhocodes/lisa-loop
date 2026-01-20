@@ -79,23 +79,24 @@ type Task struct {
 
 // Model represents main TUI model
 type Model struct {
-	state        State
-	status       string
-	loopNumber   int
-	maxCalls     int
-	callsUsed    int
-	circuitState string
-	logs         []string
-	activeView   string
-	quitting     bool
-	err          error
-	helpVisible  bool
-	startTime    time.Time
-	tick         int      // Animation tick counter
-	width        int      // Terminal width
-	height       int      // Terminal height
-	tasks        []Task   // Tasks from @fix_plan.md
-	activity     string   // Current activity description
+	state         State
+	status        string
+	loopNumber    int
+	maxCalls      int
+	callsUsed     int
+	circuitState  string
+	logs          []string
+	activeView    string
+	quitting      bool
+	err           error
+	helpVisible   bool
+	startTime     time.Time
+	tick          int    // Animation tick counter
+	width         int    // Terminal width
+	height        int    // Terminal height
+	tasks         []Task // Tasks from plan file
+	planFile      string // Name of loaded plan file (e.g., REFACTOR_PLAN.md)
+	activity      string // Current activity description
 	controller    *loop.Controller
 	ctx           context.Context
 	cancel        context.CancelFunc
@@ -137,14 +138,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 			case "p":
-				if m.controller != nil {
-					if m.state == StateRunning {
-						m.state = StatePaused
+				if m.state == StateRunning {
+					m.state = StatePaused
+					if m.controller != nil {
 						m.controller.Pause()
-					} else if m.state == StatePaused {
-						m.state = StateRunning
+					}
+				} else if m.state == StatePaused {
+					m.state = StateRunning
+					if m.controller != nil {
 						m.controller.Resume()
 					}
+				}
+				return m, nil
+
+			case "l":
+				if m.activeView == "logs" {
+					m.activeView = "status"
+				} else {
+					m.activeView = "logs"
 				}
 				return m, nil
 
@@ -508,7 +519,11 @@ func (m Model) renderTaskLine(task Task, index int, maxWidth int) string {
 
 func (m Model) renderTaskSection(width int) string {
 	if len(m.tasks) == 0 {
-		return StyleHelpDesc.Render("  No tasks loaded. Check @fix_plan.md")
+		hint := "IMPLEMENTATION_PLAN.md, REFACTOR_PLAN.md, or @fix_plan.md"
+		if m.planFile != "" {
+			hint = m.planFile
+		}
+		return StyleHelpDesc.Render("  No tasks loaded. Check " + hint)
 	}
 
 	// Count completed tasks

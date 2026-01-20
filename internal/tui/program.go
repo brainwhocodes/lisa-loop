@@ -20,7 +20,7 @@ type Program struct {
 
 // NewProgram creates a new TUI program
 func NewProgram(config codex.Config, controller *loop.Controller) *Program {
-	tasks := loadTasks()
+	planInfo := loadTasks()
 
 	model := Model{
 		state:         StateInitializing,
@@ -36,7 +36,8 @@ func NewProgram(config codex.Config, controller *loop.Controller) *Program {
 		startTime:     time.Now(),
 		width:         80,
 		height:        24,
-		tasks:         tasks,
+		tasks:         planInfo.Tasks,
+		planFile:      planInfo.Filename,
 		activity:      "",
 		controller:    controller,
 		activeTaskIdx: -1,
@@ -48,15 +49,47 @@ func NewProgram(config codex.Config, controller *loop.Controller) *Program {
 	}
 }
 
-// loadTasks reads tasks from @fix_plan.md
-func loadTasks() []Task {
-	data, err := os.ReadFile("@fix_plan.md")
-	if err != nil {
-		return []Task{}
+// PlanFileInfo holds info about loaded plan file
+type PlanFileInfo struct {
+	Filename string
+	Tasks    []Task
+}
+
+// loadTasks reads tasks from plan files in order of preference:
+// 1. IMPLEMENTATION_PLAN.md (implementation mode)
+// 2. REFACTOR_PLAN.md (refactor mode)
+// 3. @fix_plan.md (fix mode)
+func loadTasks() PlanFileInfo {
+	// Try plan files in order of preference
+	planFiles := []string{
+		"IMPLEMENTATION_PLAN.md",
+		"REFACTOR_PLAN.md",
+		"@fix_plan.md",
 	}
 
+	for _, planFile := range planFiles {
+		data, err := os.ReadFile(planFile)
+		if err != nil {
+			continue
+		}
+
+		tasks := parseTasksFromData(string(data))
+		return PlanFileInfo{
+			Filename: planFile,
+			Tasks:    tasks,
+		}
+	}
+
+	return PlanFileInfo{
+		Filename: "",
+		Tasks:    []Task{},
+	}
+}
+
+// parseTasksFromData extracts checklist tasks from plan file content
+func parseTasksFromData(data string) []Task {
 	var tasks []Task
-	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	scanner := bufio.NewScanner(strings.NewReader(data))
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())

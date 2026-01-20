@@ -1,0 +1,76 @@
+#!/bin/bash
+# Skill: lint
+# Description: Run lint/typecheck for detected project type
+# Usage: lint
+
+set -e
+
+echo "Running lint/typecheck..."
+
+if [[ -f "go.mod" ]]; then
+    echo "Go project detected"
+
+    echo "Running go vet..."
+    go vet ./...
+
+    echo "Running gofmt check..."
+    UNFORMATTED=$(gofmt -l . 2>/dev/null | grep -v vendor || true)
+    if [[ -n "$UNFORMATTED" ]]; then
+        echo "Unformatted files:"
+        echo "$UNFORMATTED"
+        exit 1
+    fi
+
+    if command -v staticcheck &>/dev/null; then
+        echo "Running staticcheck..."
+        staticcheck ./...
+    fi
+
+    echo "Lint passed"
+
+elif [[ -f "package.json" ]]; then
+    echo "Node.js project detected"
+
+    if grep -q '"lint"' package.json; then
+        npm run lint
+    elif grep -q '"eslint"' package.json; then
+        npx eslint .
+    else
+        echo "No lint script found"
+    fi
+
+    if grep -q '"typecheck"' package.json; then
+        npm run typecheck
+    elif grep -q '"tsc"' package.json || [[ -f "tsconfig.json" ]]; then
+        npx tsc --noEmit
+    fi
+
+elif [[ -f "pyproject.toml" ]] || [[ -f "requirements.txt" ]]; then
+    echo "Python project detected"
+
+    if command -v ruff &>/dev/null; then
+        echo "Running ruff..."
+        ruff check .
+    elif command -v flake8 &>/dev/null; then
+        echo "Running flake8..."
+        flake8 .
+    fi
+
+    if command -v mypy &>/dev/null; then
+        echo "Running mypy..."
+        mypy .
+    fi
+
+elif [[ -f "Cargo.toml" ]]; then
+    echo "Rust project detected"
+
+    echo "Running cargo clippy..."
+    cargo clippy -- -D warnings
+
+    echo "Running cargo fmt check..."
+    cargo fmt -- --check
+
+else
+    echo "No recognized project type"
+    exit 1
+fi

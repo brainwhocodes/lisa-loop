@@ -1,0 +1,53 @@
+#!/bin/bash
+# Skill: ralph-reset
+# Description: Reset Ralph circuit breaker and session state
+# Usage: ralph-reset [--all]
+
+RESET_ALL=false
+
+if [[ "$1" == "--all" ]]; then
+    RESET_ALL=true
+fi
+
+echo "Resetting Ralph state..."
+
+# Reset circuit breaker
+if [[ -f ".circuit_state" ]]; then
+    rm -f .circuit_state
+    echo "  Cleared circuit breaker state"
+else
+    echo "  No circuit breaker state found"
+fi
+
+# Reset session
+if [[ -f ".codex_session_id" ]]; then
+    rm -f .codex_session_id
+    echo "  Cleared session ID"
+fi
+
+if [[ -f ".codex_session_meta" ]]; then
+    rm -f .codex_session_meta
+    echo "  Cleared session metadata"
+fi
+
+# Reset exit signals
+if [[ -d ".exit_signals" ]]; then
+    rm -rf .exit_signals
+    echo "  Cleared exit signals"
+fi
+
+# Optionally reset logs
+if $RESET_ALL; then
+    if [[ -d "logs" ]]; then
+        rm -rf logs/*
+        echo "  Cleared logs"
+    fi
+
+    if [[ -f "status.json" ]]; then
+        rm -f status.json
+        echo "  Cleared status.json"
+    fi
+fi
+
+echo ""
+echo "Reset complete. Ready for fresh run."

@@ -1,0 +1,47 @@
+#!/bin/bash
+# Skill: run-tests
+# Description: Run tests for detected project type
+# Usage: run-tests
+
+set -e
+
+echo "Running tests..."
+
+if [[ -f "go.mod" ]]; then
+    echo "Go project detected"
+    go test ./... -v
+
+elif [[ -f "package.json" ]]; then
+    echo "Node.js project detected"
+
+    if grep -q '"test:unit"' package.json; then
+        npm run test:unit
+    elif grep -q '"test"' package.json; then
+        npm test
+    else
+        echo "No test script found in package.json"
+        exit 1
+    fi
+
+elif [[ -f "pyproject.toml" ]] || [[ -f "requirements.txt" ]]; then
+    echo "Python project detected"
+
+    if command -v pytest &>/dev/null; then
+        pytest -v
+    elif command -v python &>/dev/null; then
+        python -m unittest discover
+    else
+        echo "No test framework found"
+        exit 1
+    fi
+
+elif [[ -f "Cargo.toml" ]]; then
+    echo "Rust project detected"
+    cargo test
+
+else
+    echo "No recognized project type"
+    exit 1
+fi
+
+echo "Tests completed"

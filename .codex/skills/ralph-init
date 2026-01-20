@@ -1,0 +1,77 @@
+#!/bin/bash
+# Skill: ralph-init
+# Description: Initialize a Ralph project from PRD.md, specs/, or REFACTOR.md
+# Usage: ralph-init [--mode <implementation|fix|refactor>] [--verbose]
+
+set -e
+
+MODE=""
+VERBOSE=""
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --mode)
+            MODE="$2"
+            shift 2
+            ;;
+        --verbose|-v)
+            VERBOSE="--verbose"
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+echo "Initializing Ralph project..."
+
+# Auto-detect mode if not specified
+if [[ -z "$MODE" ]]; then
+    if [[ -f "REFACTOR.md" ]] || [[ -f "refactor.md" ]]; then
+        echo "Detected REFACTOR.md - using refactor mode"
+        MODE="refactor"
+    elif [[ -d "specs" ]] && ls specs/*.md >/dev/null 2>&1; then
+        echo "Detected specs/ folder - using fix mode"
+        MODE="fix"
+    elif [[ -f "PRD.md" ]]; then
+        echo "Detected PRD.md - using implementation mode"
+        MODE="implementation"
+    else
+        echo "Error: Could not detect project type."
+        echo "Need one of:"
+        echo "  - PRD.md (implementation mode)"
+        echo "  - specs/ folder with .md files (fix mode)"
+        echo "  - REFACTOR.md (refactor mode)"
+        exit 1
+    fi
+fi
+
+# Run ralph init
+if command -v ralph &>/dev/null; then
+    ralph init --mode "$MODE" $VERBOSE
+else
+    echo "Error: ralph command not found"
+    echo "Build with: go build -o ralph ./cmd/ralph"
+    exit 1
+fi
+
+echo ""
+echo "Project initialized in $MODE mode"
+
+case "$MODE" in
+    implementation)
+        echo "Created:"
+        echo "  - IMPLEMENTATION_PLAN.md (task checklist)"
+        echo "  - AGENTS.md (project guidance)"
+        ;;
+    fix)
+        echo "Created:"
+        echo "  - @fix_plan.md (prioritized fixes)"
+        ;;
+    refactor)
+        echo "Created:"
+        echo "  - REFACTOR_PLAN.md (phased refactoring tasks)"
+        ;;
+esac

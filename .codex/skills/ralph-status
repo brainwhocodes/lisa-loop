@@ -1,0 +1,84 @@
+#!/bin/bash
+# Skill: ralph-status
+# Description: Show current Ralph project status
+# Usage: ralph-status
+
+echo "Ralph Project Status"
+echo "===================="
+
+# Check project type
+echo ""
+echo "Project Type:"
+if [[ -f "REFACTOR.md" ]] && [[ -f "REFACTOR_PLAN.md" ]]; then
+    echo "  Refactor mode"
+    echo "  - REFACTOR.md: $(wc -l < REFACTOR.md) lines"
+    echo "  - REFACTOR_PLAN.md: $(wc -l < REFACTOR_PLAN.md) lines"
+
+    # Count tasks
+    total=$(grep -c '^\s*- \[' REFACTOR_PLAN.md 2>/dev/null || echo "0")
+    done=$(grep -c '^\s*- \[x\]' REFACTOR_PLAN.md 2>/dev/null || echo "0")
+    echo "  - Tasks: $done/$total completed"
+
+elif [[ -f "PRD.md" ]] && [[ -f "IMPLEMENTATION_PLAN.md" ]]; then
+    echo "  Implementation mode (PRD-based)"
+    echo "  - PRD.md: $(wc -l < PRD.md) lines"
+    echo "  - IMPLEMENTATION_PLAN.md: $(wc -l < IMPLEMENTATION_PLAN.md) lines"
+
+    # Count tasks
+    total=$(grep -c '^\s*- \[' IMPLEMENTATION_PLAN.md 2>/dev/null || echo "0")
+    done=$(grep -c '^\s*- \[x\]' IMPLEMENTATION_PLAN.md 2>/dev/null || echo "0")
+    echo "  - Tasks: $done/$total completed"
+
+elif [[ -d "specs" ]] && [[ -f "@fix_plan.md" ]]; then
+    echo "  Fix mode (specs-based)"
+    echo "  - specs/: $(ls specs/*.md 2>/dev/null | wc -l) spec files"
+    echo "  - @fix_plan.md: $(wc -l < @fix_plan.md) lines"
+
+    # Count tasks
+    total=$(grep -c '^\s*- \[' @fix_plan.md 2>/dev/null || echo "0")
+    done=$(grep -c '^\s*- \[x\]' @fix_plan.md 2>/dev/null || echo "0")
+    echo "  - Fixes: $done/$total completed"
+else
+    echo "  Not initialized (run 'ralph init')"
+fi
+
+# Check for AGENTS.md
+if [[ -f "AGENTS.md" ]]; then
+    echo ""
+    echo "Agents Config:"
+    echo "  - AGENTS.md: $(wc -l < AGENTS.md) lines"
+fi
+
+# Circuit breaker state
+if [[ -f ".circuit_state" ]]; then
+    echo ""
+    echo "Circuit Breaker:"
+    cat .circuit_state | sed 's/^/  /'
+fi
+
+# Session state
+if [[ -f ".codex_session_id" ]]; then
+    echo ""
+    echo "Active Session:"
+    echo "  ID: $(cat .codex_session_id)"
+fi
+
+# Recent logs
+if [[ -d "logs" ]]; then
+    latest_log=$(ls -t logs/*.log 2>/dev/null | head -1)
+    if [[ -n "$latest_log" ]]; then
+        echo ""
+        echo "Latest Log: $latest_log"
+        echo "  Last activity: $(stat -f '%Sm' "$latest_log" 2>/dev/null || stat -c '%y' "$latest_log" 2>/dev/null)"
+    fi
+fi
+
+# Exit signals
+if [[ -d ".exit_signals" ]] && ls .exit_signals/* >/dev/null 2>&1; then
+    echo ""
+    echo "Exit Signals:"
+    ls -lt .exit_signals/ | head -3 | tail -2 | sed 's/^/  /'
+fi
+
+echo ""
+echo "===================="

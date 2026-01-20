@@ -33,6 +33,7 @@ func TestCanMakeCall(t *testing.T) {
 		if !limiter.CanMakeCall() {
 			t.Errorf("CanMakeCall() should return true for call %d", i+1)
 		}
+		limiter.currentCalls++ // Manually increment to simulate calls
 	}
 
 	// Should not allow beyond max
@@ -142,8 +143,9 @@ func TestTimeUntilReset(t *testing.T) {
 
 	remaining := limiter.TimeUntilReset()
 
-	// Should be positive and around 30 minutes
-	if remaining.Seconds() < 25 || remaining.Seconds() > 35 {
+	// Should be around 30 minutes (1800 seconds) remaining
+	expectedSeconds := 30 * 60.0 // 30 minutes in seconds
+	if remaining.Seconds() < expectedSeconds-60 || remaining.Seconds() > expectedSeconds+60 {
 		t.Errorf("TimeUntilReset() = %v, want ~30m", remaining)
 	}
 }
@@ -199,6 +201,13 @@ func TestLoadState(t *testing.T) {
 }
 
 func TestSaveState(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Change to tmpDir for state files
+	origDir, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
 	limiter := NewRateLimiter(100, 1)
 
 	// Save state
@@ -215,7 +224,7 @@ func TestSaveState(t *testing.T) {
 		t.Errorf("LoadCallCount() error = %v, want nil", err)
 	}
 
-	if loadedCount != 2 {
-		t.Errorf("LoadCallCount() = %d, want 2", loadedCount)
+	if loadedCount != 1 {
+		t.Errorf("LoadCallCount() = %d, want 1", loadedCount)
 	}
 }

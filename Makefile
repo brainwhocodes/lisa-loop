@@ -33,11 +33,11 @@ install-templates:
 install-skills:
 	@echo "Installing Codex skills to ~/.codex/skills..."
 	@mkdir -p ~/.codex/skills
-	@cp -r templates/.codex/skills/* ~/.codex/skills/
+	@cp .codex/skills/* ~/.codex/skills/
 	@chmod +x ~/.codex/skills/*
 	@echo "Codex skills installed successfully"
 	@echo "Available skills:"
-	@ls -1 ~/.codex/skills/
+	@ls -1 ~/.codex/skills/ | grep -v '^\.'
 
 ## test: Run all tests
 test:
