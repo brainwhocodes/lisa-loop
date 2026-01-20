@@ -96,7 +96,7 @@ func (r *RateLimiter) TimeUntilReset() time.Duration {
 	return remaining
 }
 
-// LoadState loads rate limiter state from files
+// LoadState loads rate limiter state from files while preserving configured limits
 func (r *RateLimiter) LoadState() (*RateLimiter, error) {
 	count, err := state.LoadCallCount()
 	if err != nil {
@@ -108,12 +108,32 @@ func (r *RateLimiter) LoadState() (*RateLimiter, error) {
 		return nil, err
 	}
 
+	// Preserve configured maxCalls and resetHours, only update runtime state
 	return &RateLimiter{
-		maxCalls:     100, // Default
-		resetHours:   1,   // Default
+		maxCalls:     r.maxCalls,   // Preserve configured value
+		resetHours:   r.resetHours, // Preserve configured value
 		currentCalls: count,
 		lastReset:    reset,
 	}, nil
+}
+
+// LoadStateInto loads persisted state into the current rate limiter instance
+func (r *RateLimiter) LoadStateInto() error {
+	count, err := state.LoadCallCount()
+	if err != nil {
+		return err
+	}
+
+	reset, err := state.LoadLastReset()
+	if err != nil {
+		return err
+	}
+
+	// Only update runtime state, preserve configured limits
+	r.currentCalls = count
+	r.lastReset = reset
+
+	return nil
 }
 
 // SaveState saves rate limiter state to files

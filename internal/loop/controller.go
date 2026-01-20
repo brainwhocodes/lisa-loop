@@ -6,9 +6,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brainwhocodes/ralph-codex/internal/analysis"
 	"github.com/brainwhocodes/ralph-codex/internal/circuit"
 	"github.com/brainwhocodes/ralph-codex/internal/codex"
 	"github.com/brainwhocodes/ralph-codex/internal/config"
+	"github.com/brainwhocodes/ralph-codex/internal/state"
 )
 
 // Config is an alias to the unified config type
@@ -16,21 +18,21 @@ type Config = config.Config
 
 // LoopEvent represents an event from the loop controller
 type LoopEvent struct {
-	Type         string // "loop_update", "log", "state_change", "status", "codex_output", "codex_reasoning", "codex_tool"
+	Type         EventType
 	LoopNumber   int
 	CallsUsed    int
 	Status       string
 	LogMessage   string
-	LogLevel     string // INFO, WARN, ERROR, SUCCESS
+	LogLevel     LogLevel
 	CircuitState string
 
 	// Codex output streaming fields
 	OutputLine    string // Raw output line
-	OutputType    string // "reasoning", "agent_message", "tool_call", "raw"
+	OutputType    OutputType
 	ReasoningText string // Reasoning/thinking text
 	ToolName      string // Tool being called
 	ToolTarget    string // File path or command
-	ToolStatus    string // "started", "completed"
+	ToolStatus    ToolStatus
 }
 
 // EventCallback is called when the controller has an update
@@ -106,9 +108,9 @@ func (c *Controller) emit(event LoopEvent) {
 }
 
 // emitLog sends a log event
-func (c *Controller) emitLog(level, message string) {
+func (c *Controller) emitLog(level LogLevel, message string) {
 	c.emit(LoopEvent{
-		Type:       "log",
+		Type:       EventTypeLog,
 		LogMessage: message,
 		LogLevel:   level,
 	})
@@ -117,7 +119,7 @@ func (c *Controller) emitLog(level, message string) {
 // emitUpdate sends a loop update event
 func (c *Controller) emitUpdate(status string) {
 	c.emit(LoopEvent{
-		Type:         "loop_update",
+		Type:         EventTypeLoopUpdate,
 		LoopNumber:   c.loopNum,
 		CallsUsed:    c.rateLimiter.CallsMade(),
 		Status:       status,
@@ -126,9 +128,9 @@ func (c *Controller) emitUpdate(status string) {
 }
 
 // emitCodexOutput sends a codex output event
-func (c *Controller) emitCodexOutput(line, outputType string) {
+func (c *Controller) emitCodexOutput(line string, outputType OutputType) {
 	c.emit(LoopEvent{
-		Type:       "codex_output",
+		Type:       EventTypeCodexOutput,
 		OutputLine: line,
 		OutputType: outputType,
 	})
@@ -137,15 +139,15 @@ func (c *Controller) emitCodexOutput(line, outputType string) {
 // emitCodexReasoning sends a codex reasoning event
 func (c *Controller) emitCodexReasoning(text string) {
 	c.emit(LoopEvent{
-		Type:          "codex_reasoning",
+		Type:          EventTypeCodexReasoning,
 		ReasoningText: text,
 	})
 }
 
 // emitCodexTool sends a codex tool call event
-func (c *Controller) emitCodexTool(toolName, target, status string) {
+func (c *Controller) emitCodexTool(toolName, target string, status ToolStatus) {
 	c.emit(LoopEvent{
-		Type:       "codex_tool",
+		Type:       EventTypeCodexTool,
 		ToolName:   toolName,
 		ToolTarget: target,
 		ToolStatus: status,
@@ -155,13 +157,13 @@ func (c *Controller) emitCodexTool(toolName, target, status string) {
 // Pause pauses the loop
 func (c *Controller) Pause() {
 	c.paused = true
-	c.emitLog("INFO", "Loop paused")
+	c.emitLog(LogLevelInfo, "Loop paused")
 }
 
 // Resume resumes the loop
 func (c *Controller) Resume() {
 	c.paused = false
-	c.emitLog("INFO", "Loop resumed")
+	c.emitLog(LogLevelInfo, "Loop resumed")
 }
 
 // IsPaused returns whether the loop is paused
@@ -176,7 +178,7 @@ func (c *Controller) Stop() {
 
 // Run executes the main loop
 func (c *Controller) Run(ctx stdcontext.Context) error {
-	c.emitLog("INFO", fmt.Sprintf("Starting Ralph Codex loop (max %d calls)", c.config.MaxLoops))
+	c.emitLog(LogLevelInfo, fmt.Sprintf("Starting Ralph Codex loop (max %d calls)", c.config.MaxLoops))
 	c.emitUpdate("starting")
 
 	for {
@@ -187,14 +189,14 @@ func (c *Controller) Run(ctx stdcontext.Context) error {
 		}
 
 		if c.shouldStop {
-			c.emitLog("SUCCESS", "Loop stopped")
+			c.emitLog(LogLevelSuccess, "Loop stopped")
 			c.emitUpdate("stopped")
 			return nil
 		}
 
 		select {
 		case <-ctx.Done():
-			c.emitLog("WARN", "Loop cancelled")
+			c.emitLog(LogLevelWarn, "Loop cancelled")
 			c.emitUpdate("cancelled")
 			return ctx.Err()
 		default:
@@ -204,14 +206,14 @@ func (c *Controller) Run(ctx stdcontext.Context) error {
 			err := c.ExecuteLoop(ctx)
 
 			if err != nil {
-				c.emitLog("ERROR", fmt.Sprintf("Loop iteration error: %v", err))
+				c.emitLog(LogLevelError, fmt.Sprintf("Loop iteration error: %v", err))
 				c.emitUpdate("error")
 				return err
 			}
 
 			// Check if we should stop
 			if c.ShouldContinue() {
-				c.emitLog("SUCCESS", fmt.Sprintf("Ralph Codex loop complete after %d iterations", c.loopNum))
+				c.emitLog(LogLevelSuccess, fmt.Sprintf("Ralph Codex loop complete after %d iterations", c.loopNum))
 				c.emitUpdate("complete")
 				return nil
 			}
@@ -233,14 +235,14 @@ func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
 
 	// Check rate limit
 	if !c.rateLimiter.CanMakeCall() {
-		c.emitLog("WARN", fmt.Sprintf("Rate limit reached. Calls remaining: %d", c.rateLimiter.CallsRemaining()))
+		c.emitLog(LogLevelWarn, fmt.Sprintf("Rate limit reached. Calls remaining: %d", c.rateLimiter.CallsRemaining()))
 		c.emitUpdate("rate_limited")
 		return c.rateLimiter.WaitForReset(ctx)
 	}
 
 	// Check circuit breaker
 	if c.breaker.ShouldHalt() {
-		c.emitLog("ERROR", "Circuit breaker is OPEN, halting execution")
+		c.emitLog(LogLevelError, "Circuit breaker is OPEN, halting execution")
 		c.emitUpdate("circuit_open")
 		return fmt.Errorf("circuit breaker is OPEN, halting execution")
 	}
@@ -248,14 +250,14 @@ func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
 	// Load prompt and fix plan
 	prompt, err := GetPrompt()
 	if err != nil {
-		c.emitLog("ERROR", fmt.Sprintf("Failed to load prompt: %v", err))
+		c.emitLog(LogLevelError, fmt.Sprintf("Failed to load prompt: %v", err))
 		c.emitUpdate("error")
 		return fmt.Errorf("failed to load prompt: %w", err)
 	}
 
 	tasks, err := LoadFixPlan()
 	if err != nil {
-		c.emitLog("ERROR", fmt.Sprintf("Failed to load fix plan: %v", err))
+		c.emitLog(LogLevelError, fmt.Sprintf("Failed to load fix plan: %v", err))
 		c.emitUpdate("error")
 		return fmt.Errorf("failed to load fix plan: %w", err)
 	}
@@ -269,9 +271,9 @@ func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
 		}
 	}
 
-	loopContext, err := BuildContext("", c.loopNum+1, remainingTasks, circuitState, c.lastOutput)
+	loopContext, err := BuildContext(c.loopNum+1, remainingTasks, circuitState, c.lastOutput)
 	if err != nil {
-		c.emitLog("ERROR", fmt.Sprintf("Failed to build context: %v", err))
+		c.emitLog(LogLevelError, fmt.Sprintf("Failed to build context: %v", err))
 		c.emitUpdate("error")
 		return fmt.Errorf("failed to build context: %w", err)
 	}
@@ -279,10 +281,10 @@ func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
 	promptWithContext := InjectContext(prompt, loopContext)
 
 	// Execute Codex
-	c.emitLog("INFO", fmt.Sprintf("Loop %d: Executing Codex", c.loopNum+1))
+	c.emitLog(LogLevelInfo, fmt.Sprintf("Loop %d: Executing Codex", c.loopNum+1))
 	c.emitUpdate("codex_running")
-	c.emitCodexOutput(fmt.Sprintf("Starting Codex execution (loop %d)...", c.loopNum+1), "raw")
-	c.emitCodexOutput(fmt.Sprintf("Prompt size: %d bytes", len(promptWithContext)), "raw")
+	c.emitCodexOutput(fmt.Sprintf("Starting Codex execution (loop %d)...", c.loopNum+1), OutputTypeRaw)
+	c.emitCodexOutput(fmt.Sprintf("Prompt size: %d bytes", len(promptWithContext)), OutputTypeRaw)
 	output, _, err := c.codexRunner.Run(promptWithContext)
 
 	if err != nil {
@@ -291,29 +293,50 @@ func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
 
 		// Record error in circuit breaker
 		c.breaker.RecordError(err.Error())
-		c.emitLog("ERROR", fmt.Sprintf("Codex execution failed: %v", err))
+		c.emitLog(LogLevelError, fmt.Sprintf("Codex execution failed: %v", err))
 		c.emitUpdate("execution_error")
 		return err
 	}
 
 	c.lastOutput = fmt.Sprintf("Success: %s", output[:min(200, len(output))])
-	c.emitLog("SUCCESS", fmt.Sprintf("Loop %d completed successfully", c.loopNum+1))
+	c.emitLog(LogLevelSuccess, fmt.Sprintf("Loop %d completed successfully", c.loopNum+1))
 	c.emitUpdate("execution_complete")
 
-	// Analyze output for exit conditions
-	// TODO: This will be implemented in response analysis package
-
-	// Record result in circuit breaker
-	filesChanged := 0
-	if strings.Contains(output, "Modified") || strings.Contains(output, "Created") {
-		filesChanged = 1
+	// Analyze output for exit conditions using the analysis package
+	exitSignals, _ := state.LoadExitSignals()
+	analysisResult, err := analysis.Analyze(output, exitSignals)
+	if err != nil {
+		c.emitLog(LogLevelWarn, fmt.Sprintf("Output analysis failed: %v", err))
 	}
 
-	hasErrors := strings.Contains(output, "Error") || strings.Contains(output, "failed")
+	// Determine hasErrors and filesChanged from analysis
+	hasErrors := false
+	filesChanged := 0
+	if analysisResult != nil {
+		hasErrors = analysisResult.HasErrors
+		if analysisResult.Status != nil {
+			filesChanged = analysisResult.Status.FilesModified
+		}
 
+		// If exit signal detected, persist it and signal stop
+		if analysisResult.ExitSignal {
+			c.emitLog(LogLevelInfo, "Exit signal detected in output")
+			exitSignals = append(exitSignals, fmt.Sprintf("loop_%d", c.loopNum+1))
+			_ = state.SaveExitSignals(exitSignals)
+			c.shouldStop = true
+		}
+
+		// Check for completion based on confidence
+		if analysisResult.ConfidenceScore >= 0.9 && analysisResult.Status != nil && analysisResult.Status.Status == "COMPLETE" {
+			c.emitLog(LogLevelSuccess, "High-confidence completion detected")
+			c.shouldStop = true
+		}
+	}
+
+	// Record result in circuit breaker
 	err = c.breaker.RecordResult(c.loopNum, filesChanged, hasErrors)
 	if err != nil {
-		c.emitLog("ERROR", fmt.Sprintf("Failed to record result: %v", err))
+		c.emitLog(LogLevelError, fmt.Sprintf("Failed to record result: %v", err))
 		c.emitUpdate("error")
 		return err
 	}
@@ -409,24 +432,28 @@ func (c *Controller) handleCodexEvent(event codex.Event) {
 
 	case "message", "delta":
 		if parsed.Text != "" {
-			c.emitCodexOutput(parsed.Text, "agent_message")
+			c.emitCodexOutput(parsed.Text, OutputTypeAgentMessage)
 		}
 
 	case "tool_call", "tool_result":
 		if parsed.ToolName != "" {
-			c.emitCodexTool(parsed.ToolName, parsed.ToolTarget, parsed.ToolStatus)
+			status := ToolStatusStarted
+			if parsed.ToolStatus == "completed" {
+				status = ToolStatusCompleted
+			}
+			c.emitCodexTool(parsed.ToolName, parsed.ToolTarget, status)
 		}
 
 	case "lifecycle":
 		// Lifecycle events (start, stop, etc.) - just show the type
 		if parsed.RawType != "" {
-			c.emitCodexOutput(fmt.Sprintf(">>> %s", parsed.RawType), "raw")
+			c.emitCodexOutput(fmt.Sprintf(">>> %s", parsed.RawType), OutputTypeRaw)
 		}
 
 	default:
 		// Unknown event with text
 		if parsed.Text != "" {
-			c.emitCodexOutput(parsed.Text, "raw")
+			c.emitCodexOutput(parsed.Text, OutputTypeRaw)
 		}
 	}
 }

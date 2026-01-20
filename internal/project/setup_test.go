@@ -1,8 +1,10 @@
 package project
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -312,4 +314,155 @@ func TestSetupEmptyName(t *testing.T) {
 	if err == nil {
 		t.Error("Setup() expected error for empty project name, got nil")
 	}
+}
+
+// MockCommandRunner records commands for testing
+type MockCommandRunner struct {
+	Commands []string
+	Errors   map[string]error
+}
+
+func (m *MockCommandRunner) Run(command string) error {
+	m.Commands = append(m.Commands, command)
+	if m.Errors != nil {
+		if err, ok := m.Errors[command]; ok {
+			return err
+		}
+	}
+	return nil
+}
+
+func TestExecuteCommand(t *testing.T) {
+	// Save original runner and restore after test
+	origRunner := commandRunner
+	defer func() { commandRunner = origRunner }()
+
+	mock := &MockCommandRunner{
+		Commands: []string{},
+	}
+	SetCommandRunner(mock)
+
+	err := executeCommand("git init")
+	if err != nil {
+		t.Errorf("executeCommand() error = %v", err)
+	}
+
+	if len(mock.Commands) != 1 {
+		t.Errorf("executeCommand() expected 1 command, got %d", len(mock.Commands))
+	}
+
+	if mock.Commands[0] != "git init" {
+		t.Errorf("executeCommand() command = %q, want %q", mock.Commands[0], "git init")
+	}
+}
+
+func TestExecuteCommandError(t *testing.T) {
+	origRunner := commandRunner
+	defer func() { commandRunner = origRunner }()
+
+	mock := &MockCommandRunner{
+		Commands: []string{},
+		Errors: map[string]error{
+			"git push": fmt.Errorf("remote rejected"),
+		},
+	}
+	SetCommandRunner(mock)
+
+	err := executeCommand("git push")
+	if err == nil {
+		t.Error("executeCommand() expected error, got nil")
+	}
+
+	if err.Error() != "remote rejected" {
+		t.Errorf("executeCommand() error = %q, want %q", err.Error(), "remote rejected")
+	}
+}
+
+func TestSetupWithGit(t *testing.T) {
+	tmpDir := t.TempDir()
+	projectName := "test-git-project"
+
+	// Use mock runner to avoid actual git operations
+	origRunner := commandRunner
+	defer func() { commandRunner = origRunner }()
+
+	mock := &MockCommandRunner{
+		Commands: []string{},
+	}
+	SetCommandRunner(mock)
+
+	opts := SetupOptions{
+		ProjectName: projectName,
+		TemplateDir: "",
+		WithGit:     true,
+		Verbose:     false,
+	}
+
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(tmpDir)
+
+	result, err := Setup(opts)
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+
+	if !result.Success {
+		t.Error("Setup() returned unsuccessful result")
+	}
+
+	// Verify git commands were called
+	if len(mock.Commands) < 2 {
+		t.Errorf("Setup() expected at least 2 git commands, got %d", len(mock.Commands))
+	}
+
+	// Check for git init command
+	foundInit := false
+	foundCommit := false
+	for _, cmd := range mock.Commands {
+		if strings.Contains(cmd, "git init") {
+			foundInit = true
+		}
+		if strings.Contains(cmd, "git commit") {
+			foundCommit = true
+		}
+	}
+
+	if !foundInit {
+		t.Error("Setup() did not call 'git init'")
+	}
+	if !foundCommit {
+		t.Error("Setup() did not call 'git commit'")
+	}
+
+	// Verify .gitignore was created
+	gitignorePath := filepath.Join(result.ProjectPath, ".gitignore")
+	if _, err := os.Stat(gitignorePath); err != nil {
+		t.Error("Setup() did not create .gitignore")
+	}
+}
+
+func TestResetCommandRunner(t *testing.T) {
+	// Save original runner
+	origRunner := commandRunner
+
+	// Set a mock
+	mock := &MockCommandRunner{}
+	SetCommandRunner(mock)
+
+	// Verify mock is set
+	if commandRunner != mock {
+		t.Error("SetCommandRunner() did not set the runner")
+	}
+
+	// Reset and verify default runner is restored
+	ResetCommandRunner()
+
+	_, ok := commandRunner.(*DefaultCommandRunner)
+	if !ok {
+		t.Error("ResetCommandRunner() did not restore DefaultCommandRunner")
+	}
+
+	// Restore original for other tests
+	commandRunner = origRunner
 }

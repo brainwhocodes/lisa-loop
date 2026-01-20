@@ -3,6 +3,7 @@ package project
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -210,6 +211,47 @@ func TestGetConversionSummary(t *testing.T) {
 
 	if summary[len(summary)-1:] != "\n" {
 		t.Errorf("GetConversionSummary() summary doesn't end with newline, got: %q", summary[len(summary)-1:])
+	}
+}
+
+func TestParseSourceContentInterleavedSections(t *testing.T) {
+	// Test that interleaved/repeated section headings append content instead of resetting
+	content := `# First Prompt Section
+First prompt content.
+
+## First Task Section
+- Task A
+- Task B
+
+# Second Prompt Section
+Second prompt content.
+
+## Second Task Section
+- Task C
+- Task D
+
+### Agent Section
+Agent instructions here.`
+
+	prompt, fixPlan, _, _, err := parseSourceContent(content)
+	if err != nil {
+		t.Fatalf("parseSourceContent() error = %v", err)
+	}
+
+	// Verify prompt contains both sections
+	if !strings.Contains(prompt, "First prompt content") {
+		t.Error("parseSourceContent() prompt missing 'First prompt content'")
+	}
+	if !strings.Contains(prompt, "Second prompt content") {
+		t.Error("parseSourceContent() prompt missing 'Second prompt content' - repeated headings should append, not reset")
+	}
+
+	// Verify fix plan contains both task sections
+	if !strings.Contains(fixPlan, "Task A") {
+		t.Error("parseSourceContent() fixPlan missing 'Task A'")
+	}
+	if !strings.Contains(fixPlan, "Task C") {
+		t.Error("parseSourceContent() fixPlan missing 'Task C' - repeated headings should append, not reset")
 	}
 }
 

@@ -111,6 +111,7 @@ func ImportPRD(opts ImportOptions) (*ImportResult, error) {
 }
 
 // parseSourceContent parses source content and extracts PROMPT, fix plan, and agent sections
+// When encountering repeated headings for the same section, content is appended rather than reset
 func parseSourceContent(content string) (string, string, string, []string, error) {
 	var promptBuilder, fixPlanBuilder, agentBuilder strings.Builder
 	warnings := []string{}
@@ -129,7 +130,7 @@ func parseSourceContent(content string) (string, string, string, []string, error
 			// Check for prompt section (highest priority)
 			if strings.Contains(lowerLine, "prompt") {
 				currentSection = "prompt"
-				promptBuilder.Reset()
+				// Append the heading, don't reset - preserves content from repeated headings
 				promptBuilder.WriteString(line)
 				promptBuilder.WriteString("\n")
 				foundSection = true
@@ -137,7 +138,7 @@ func parseSourceContent(content string) (string, string, string, []string, error
 			// Check for fixplan section (only if prompt not found)
 			if !foundSection && (strings.Contains(lowerLine, "task") || strings.Contains(lowerLine, "plan") || strings.Contains(lowerLine, "todo")) {
 				currentSection = "fixplan"
-				fixPlanBuilder.Reset()
+				// Append the heading, don't reset - preserves content from repeated headings
 				fixPlanBuilder.WriteString(line)
 				fixPlanBuilder.WriteString("\n")
 				foundSection = true
@@ -145,7 +146,7 @@ func parseSourceContent(content string) (string, string, string, []string, error
 			// Check for agent section (only if others not found)
 			if !foundSection && strings.Contains(lowerLine, "agent") {
 				currentSection = "agent"
-				agentBuilder.Reset()
+				// Append the heading, don't reset - preserves content from repeated headings
 				agentBuilder.WriteString(line)
 				agentBuilder.WriteString("\n")
 			}

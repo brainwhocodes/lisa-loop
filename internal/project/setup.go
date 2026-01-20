@@ -2,7 +2,6 @@ package project
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -155,57 +154,13 @@ func validateProjectName(name string) error {
 }
 
 // generateTemplatesWithCodex uses Codex to generate customized PROMPT.md and @fix_plan.md
+// Uses the unified RunCodexWithDirectStream helper
 func generateTemplatesWithCodex(projectPath string, prompt string) error {
-	// Build the prompt for Codex
 	codexPrompt := fmt.Sprintf(
 		"Generate a PROMPT.md and @fix_plan.md for a project with this description: %s. Write the files directly.",
 		prompt,
 	)
-
-	// Create the command
-	cmd := exec.Command(
-		"codex", "exec",
-		"--json",
-		"--skip-git-repo-check",
-		"--sandbox", "danger-full-access",
-		codexPrompt,
-	)
-
-	// Set the working directory to the project path
-	cmd.Dir = projectPath
-
-	// Get stdout and stderr pipes for streaming
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("failed to get stdout pipe: %w", err)
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("failed to get stderr pipe: %w", err)
-	}
-
-	// Start the command
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start codex: %w", err)
-	}
-
-	// Stream stdout to os.Stdout
-	go func() {
-		io.Copy(os.Stdout, stdout)
-	}()
-
-	// Stream stderr to os.Stderr
-	go func() {
-		io.Copy(os.Stderr, stderr)
-	}()
-
-	// Wait for the command to complete
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("codex execution failed: %w", err)
-	}
-
-	return nil
+	return RunCodexWithDirectStream(codexPrompt, projectPath)
 }
 
 // createTemplateFiles creates template files in project directory
@@ -350,80 +305,53 @@ func createREADME(path, projectName string) error {
 	return os.WriteFile(path, []byte(builder.String()), 0644)
 }
 
-// executeCommand executes a shell command (simplified)
+// CommandRunner defines the interface for executing shell commands
+// This allows for easy mocking in tests
+type CommandRunner interface {
+	Run(command string) error
+}
+
+// DefaultCommandRunner executes commands using os/exec
+type DefaultCommandRunner struct{}
+
+// Run executes a shell command using sh -c
+func (r *DefaultCommandRunner) Run(command string) error {
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+// commandRunner is the current command runner, can be swapped for testing
+var commandRunner CommandRunner = &DefaultCommandRunner{}
+
+// SetCommandRunner sets a custom command runner (useful for testing)
+func SetCommandRunner(r CommandRunner) {
+	commandRunner = r
+}
+
+// ResetCommandRunner resets to the default command runner
+func ResetCommandRunner() {
+	commandRunner = &DefaultCommandRunner{}
+}
+
+// executeCommand executes a shell command using the current CommandRunner
 func executeCommand(cmd string) error {
-	// For now, return nil - this would be implemented with os/exec
-	// The actual implementation would use exec.Command()
-	return nil
+	return commandRunner.Run(cmd)
 }
 
 // ValidateProject checks if current directory is a valid Ralph project
-// Valid configurations:
-// - Implementation mode: PRD.md + IMPLEMENTATION_PLAN.md
-// - Refactor mode: REFACTOR.md + REFACTOR_PLAN.md
-// - Fix mode: PROMPT.md + @fix_plan.md
+// Delegates to the unified ValidateProjectDir function
 func ValidateProject() error {
-	// Check for implementation mode
-	_, prdErr := os.Stat("PRD.md")
-	_, implPlanErr := os.Stat("IMPLEMENTATION_PLAN.md")
-	if prdErr == nil && implPlanErr == nil {
-		return nil
-	}
-
-	// Check for refactor mode
-	_, refactorErr := os.Stat("REFACTOR.md")
-	_, refactorPlanErr := os.Stat("REFACTOR_PLAN.md")
-	if refactorErr == nil && refactorPlanErr == nil {
-		return nil
-	}
-
-	// Check for fix mode
-	_, promptErr := os.Stat("PROMPT.md")
-	_, fixPlanErr := os.Stat("@fix_plan.md")
-	if promptErr == nil && fixPlanErr == nil {
-		return nil
-	}
-
-	return fmt.Errorf("not a valid Ralph project. Run 'ralph init' with one of:\n  - PRD.md (creates IMPLEMENTATION_PLAN.md)\n  - REFACTOR.md (creates REFACTOR_PLAN.md)\n  - specs/ folder (creates @fix_plan.md)")
+	return ValidateProjectDir(".")
 }
 
 // GetProjectRoot finds the project root directory
+// Note: This is the setup.go version that is separate from mode.go's FindProjectRoot
+// to avoid import cycles. Both have the same behavior.
 func GetProjectRoot() (string, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-
-	for {
-		// Check for implementation mode
-		if _, err := os.Stat(filepath.Join(wd, "PRD.md")); err == nil {
-			if _, err := os.Stat(filepath.Join(wd, "IMPLEMENTATION_PLAN.md")); err == nil {
-				return wd, nil
-			}
-		}
-
-		// Check for refactor mode
-		if _, err := os.Stat(filepath.Join(wd, "REFACTOR.md")); err == nil {
-			if _, err := os.Stat(filepath.Join(wd, "REFACTOR_PLAN.md")); err == nil {
-				return wd, nil
-			}
-		}
-
-		// Check for fix mode
-		if _, err := os.Stat(filepath.Join(wd, "PROMPT.md")); err == nil {
-			if _, err := os.Stat(filepath.Join(wd, "@fix_plan.md")); err == nil {
-				return wd, nil
-			}
-		}
-
-		parent := filepath.Dir(wd)
-		if parent == wd {
-			break
-		}
-		wd = parent
-	}
-
-	return "", fmt.Errorf("could not find Ralph project root")
+	root, _, err := FindProjectRoot("")
+	return root, err
 }
 
 // defaultPromptTemplate returns default PROMPT.md content

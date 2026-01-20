@@ -50,7 +50,7 @@ func TestLoadFixPlan(t *testing.T) {
 func TestBuildContext(t *testing.T) {
 	// Test with remaining tasks
 	tasks := []string{"Task 1", "Task 2"}
-	context, _ := BuildContext("", 1, tasks, "CLOSED", "Previous summary")
+	context, _ := BuildContext(1, tasks, "CLOSED", "Previous summary")
 
 	expectedContains := []string{"Loop: 1", "Circuit Breaker: CLOSED", "Remaining Tasks:", "Previous Loop Summary:"}
 
@@ -71,7 +71,7 @@ func TestBuildContext(t *testing.T) {
 
 func TestBuildContextNoTasks(t *testing.T) {
 	// Test with no remaining tasks
-	context, _ := BuildContext("", 1, []string{}, "CLOSED", "Summary")
+	context, _ := BuildContext(1, []string{}, "CLOSED", "Summary")
 
 	if strings.Contains(context, "Remaining Tasks:") {
 		t.Errorf("BuildContext() should not show Remaining Tasks when empty")

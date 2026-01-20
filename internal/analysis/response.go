@@ -42,21 +42,23 @@ func Analyze(output string, exitSignals []string) (*Analysis, error) {
 
 	var status *RALPHStatus
 	var completionCount int
-	var confidenceScore float64
-	var hasErrors bool
-	var errorMessages []string
 
 	if format == FormatJSON {
 		// JSON analysis
 		status, completionCount = analyzeJSONOutput(output)
-		confidenceScore = 1.0 // JSON is structured, high confidence
-		hasErrors = status.Status == "BLOCKED" || status.TestsStatus == "FAILING"
 	} else {
 		// Text analysis
 		status, completionCount = analyzeTextOutput(output)
-		confidenceScore = 0.8 // Text is less structured
-		hasErrors = status.Status == "BLOCKED" || status.TestsStatus == "FAILING"
 	}
+
+	// Calculate confidence using the helper function
+	confidenceScore := calculateConfidence(status, completionCount, output)
+
+	// Extract error messages from output
+	errorMessages := ExtractErrors(output)
+
+	// Determine if there are errors based on status or extracted errors
+	hasErrors := status.Status == "BLOCKED" || status.TestsStatus == "FAILING" || len(errorMessages) > 0
 
 	return &Analysis{
 		Format:               format,

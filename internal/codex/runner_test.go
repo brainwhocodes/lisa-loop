@@ -362,6 +362,45 @@ func TestParseComplexJSONL(t *testing.T) {
 	}
 }
 
+func TestParseLargeJSONL(t *testing.T) {
+	// Generate a large JSON payload (> 64KB default scanner buffer)
+	largeText := strings.Repeat("x", 100000) // 100KB of text
+	jsonLine := `{"type": "message", "text": "` + largeText + `"}`
+
+	event, err := ParseJSONLLine(jsonLine)
+	if err != nil {
+		t.Errorf("ParseJSONLLine() large line error = %v", err)
+	}
+
+	if MessageText(event) != largeText {
+		t.Errorf("ParseJSONLLine() large line text length = %d, want %d", len(MessageText(event)), len(largeText))
+	}
+}
+
+func TestParseStreamWithLargeLines(t *testing.T) {
+	// Test ParseJSONLStream with large lines
+	largeText := strings.Repeat("y", 100000) // 100KB of text
+	lines := []string{
+		`{"event": "thread.started", "thread_id": "thread-large"}`,
+		`{"type": "message", "text": "` + largeText + `"}`,
+		`{"type": "message", "text": "normal message"}`,
+	}
+
+	threadID, message, events := ParseJSONLStream(lines)
+
+	if threadID != "thread-large" {
+		t.Errorf("ParseJSONLStream() threadID = %v, want thread-large", threadID)
+	}
+
+	if !strings.Contains(message, largeText) {
+		t.Error("ParseJSONLStream() did not preserve large text content")
+	}
+
+	if len(events) != 3 {
+		t.Errorf("ParseJSONLStream() events count = %d, want 3", len(events))
+	}
+}
+
 func TestStatePersistence(t *testing.T) {
 	t.Run("Save and Load Codex Session", func(t *testing.T) {
 		tmpDir := t.TempDir()

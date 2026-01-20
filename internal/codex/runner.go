@@ -79,7 +79,11 @@ func (r *Runner) runCLI(prompt string) (string, string, error) {
 	var message strings.Builder
 
 	// Process stdout (JSONL events)
+	// Use 1MB buffer to handle large JSONL lines from Codex
+	const maxScannerBuffer = 1024 * 1024 // 1MB
 	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		outputBuilder.WriteString(line)
@@ -114,12 +118,24 @@ func (r *Runner) runCLI(prompt string) (string, string, error) {
 		}
 	}
 
-	// Read stderr
+	// Check for scanner errors (e.g., token too long)
+	if err := scanner.Err(); err != nil {
+		return "", "", fmt.Errorf("error reading codex output: %w", err)
+	}
+
+	// Read stderr with same buffer size
 	stderrScanner := bufio.NewScanner(stderr)
+	stderrScanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
 	var stderrOutput strings.Builder
 	for stderrScanner.Scan() {
 		stderrOutput.WriteString(stderrScanner.Text())
 		stderrOutput.WriteString("\n")
+	}
+	if err := stderrScanner.Err(); err != nil {
+		// Log stderr scanner error but don't fail - stderr is secondary
+		if r.config.Verbose {
+			fmt.Printf("Warning: error reading stderr: %v\n", err)
+		}
 	}
 
 	// Wait for command to complete

@@ -19,23 +19,31 @@ Ralph Codex is an autonomous AI development loop system written in **Go**. It en
 
 ```
 ralph-codex/
-├── cmd/ralph/main.go          # CLI entry point
+├── cmd/
+│   ├── ralph/main.go          # Main CLI entry point
+│   └── test-loop/main.go      # Loop controller test harness (no TUI)
 ├── internal/
 │   ├── analysis/              # Response analysis
 │   │   └── response.go        # Parse RALPH_STATUS, detect completion
 │   ├── circuit/               # Circuit breaker pattern
 │   │   └── breaker.go         # CLOSED/HALF_OPEN/OPEN states
-│   ├── codex/                 # Codex CLI execution
+│   ├── codex/                 # Codex CLI execution + JSONL parsing
 │   │   ├── config.go          # Config type alias to unified config
+│   │   ├── events.go          # Unified event parsing
 │   │   └── runner.go          # Execute codex, parse JSONL output
 │   ├── config/                # Unified configuration
 │   │   └── config.go          # Shared Config struct
 │   ├── loop/                  # Main loop controller
-│   │   ├── context.go         # Build loop context, load fix plan
+│   │   ├── context.go         # Build loop context, load plan
 │   │   ├── controller.go      # Orchestrate loop iterations
+│   │   ├── events.go          # Typed constants for event types, log levels
 │   │   └── ratelimit.go       # Loop iteration management
 │   ├── project/               # Project management
+│   │   ├── codexhelper.go     # Shared Codex invocation utilities
 │   │   ├── import.go          # PRD/spec import to Ralph format
+│   │   ├── init.go            # Generate plans and AGENTS.md
+│   │   ├── mode.go            # Unified project mode detection
+│   │   ├── prompts.go         # Prompt/template resolution
 │   │   └── setup.go           # Create new Ralph projects
 │   ├── state/                 # State persistence
 │   │   └── files.go           # Generic LoadState[T]/SaveState[T] helpers
@@ -43,13 +51,17 @@ ralph-codex/
 │   │   └── stats.go           # StatsProvider interface
 │   └── tui/                   # Terminal UI
 │       ├── model.go           # Bubble Tea model with integrated views
+│       ├── views.go           # Rendering helpers
+│       ├── messages.go        # Message types
 │       ├── program.go         # Program wrapper
 │       ├── keybindings.go     # Keyboard shortcuts
-│       └── styles.go          # Lipgloss styling, constants, helpers
+│       ├── styles.go          # Lipgloss styling, constants, helpers
+│       └── theme.go           # Theme tokens
 ├── templates/                 # Project templates
 │   ├── PROMPT.md
 │   ├── fix_plan.md
 │   └── AGENT.md
+├── tests/                     # Bats unit/integration tests
 ├── Makefile                   # Build automation
 └── go.mod                     # Go module definition
 ```
@@ -58,11 +70,14 @@ ralph-codex/
 
 ### Building
 ```bash
-# Build the binary
+# Build the main CLI
 go build -o ralph ./cmd/ralph
 
 # Or use make
 make build
+
+# Build the test harness (for loop testing without TUI)
+go build -o ralph-test ./cmd/test-loop
 
 # Run tests
 go test ./...
@@ -225,7 +240,11 @@ Projects managed by Ralph use these control files:
 
 | File | Purpose |
 |------|---------|
-| `PROMPT.md` | Main instructions for each loop iteration |
+| `PRD.md` | Requirements source for implementation mode |
+| `IMPLEMENTATION_PLAN.md` | Implementation task plan (`- [ ]` / `- [x]`) |
+| `REFACTOR.md` | Refactoring goals for refactor mode |
+| `REFACTOR_PLAN.md` | Refactor task plan (`- [ ]` / `- [x]`) |
+| `PROMPT.md` | Main instructions for fix mode |
 | `@fix_plan.md` | Prioritized task checklist (`- [ ]` / `- [x]`) |
 | `@AGENT.md` | Build and run instructions |
 

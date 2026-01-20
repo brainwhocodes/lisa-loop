@@ -1,15 +1,11 @@
 package project
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"github.com/brainwhocodes/ralph-codex/internal/codex"
 	"github.com/charmbracelet/log"
 )
 
@@ -131,109 +127,9 @@ func InitFromPRD(opts InitOptions) (*InitResult, error) {
 }
 
 // generateWithCodex calls Codex CLI and returns the generated content
-// Output is streamed to the console in real-time using the unified event parser
+// Output is streamed to the console in real-time using the unified helper
 func generateWithCodex(prompt string, verbose bool) (string, error) {
-	// Build command
-	cmd := exec.Command(
-		"codex", "exec",
-		"--json",
-		"--skip-git-repo-check",
-		"--sandbox", "danger-full-access",
-	)
-
-	// Pass prompt via stdin
-	cmd.Stdin = strings.NewReader(prompt)
-
-	if verbose {
-		log.Debug("Calling Codex...")
-	}
-
-	// Get stdout pipe for streaming
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return "", fmt.Errorf("failed to get stdout pipe: %w", err)
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return "", fmt.Errorf("failed to get stderr pipe: %w", err)
-	}
-
-	// Start the command
-	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("failed to start codex: %w", err)
-	}
-
-	// Read stderr in background
-	go func() {
-		buf := make([]byte, 1024)
-		for {
-			n, err := stderr.Read(buf)
-			if err != nil {
-				break
-			}
-			if n > 0 {
-				fmt.Fprint(os.Stderr, string(buf[:n]))
-			}
-		}
-	}()
-
-	// Read and parse JSONL output using unified parser
-	var content strings.Builder
-	scanner := bufio.NewScanner(stdout)
-	// Increase scanner buffer for large outputs
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			continue
-		}
-
-		// Parse JSONL
-		var event map[string]interface{}
-		if err := json.Unmarshal([]byte(line), &event); err != nil {
-			// Not JSON, might be raw output
-			content.WriteString(line)
-			continue
-		}
-
-		// Use unified event parser
-		parsed := codex.ParseEvent(event)
-		if parsed == nil {
-			continue
-		}
-
-		switch parsed.Type {
-		case "reasoning":
-			if verbose && parsed.Text != "" {
-				log.Debug(parsed.Text)
-			}
-		case "message", "delta":
-			if parsed.Text != "" {
-				fmt.Print(parsed.Text) // Stream to console
-				content.WriteString(parsed.Text)
-			}
-		case "tool_call":
-			if verbose && parsed.ToolName != "" {
-				log.Debug("Tool", "name", parsed.ToolName, "target", parsed.ToolTarget)
-			}
-		}
-	}
-
-	fmt.Println() // Final newline after streaming
-
-	// Wait for command to complete
-	if err := cmd.Wait(); err != nil {
-		return "", fmt.Errorf("codex execution failed: %w", err)
-	}
-
-	result := content.String()
-	if result == "" {
-		return "", fmt.Errorf("no content generated from Codex")
-	}
-
-	return result, nil
+	return RunCodexSimple(prompt, verbose)
 }
 
 // FindPRD looks for a PRD file in the given directory

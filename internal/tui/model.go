@@ -227,7 +227,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "R":
 				// Reset circuit breaker - send message to controller
 				m.circuitState = "CLOSED"
-				m.addLog("INFO", "Circuit breaker reset")
+				m.addLog(string(loop.LogLevelInfo), "Circuit breaker reset")
 				return m, nil
 
 			}
@@ -270,23 +270,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ControllerEventMsg:
 		event := msg.Event
 		switch event.Type {
-		case "loop_update":
+		case loop.EventTypeLoopUpdate:
 			m.loopNumber = event.LoopNumber
 			m.callsUsed = event.CallsUsed
 			m.status = event.Status
 			m.circuitState = event.CircuitState
 			m.updateActiveTask()
-		case "log":
-			m.addLog(event.LogLevel, event.LogMessage)
-		case "state_change":
+		case loop.EventTypeLog:
+			m.addLog(string(event.LogLevel), event.LogMessage)
+		case loop.EventTypeStateChange:
 			// Handle state changes if needed
-		case "codex_output":
-			m.addOutputLine(event.OutputLine, event.OutputType)
-		case "codex_reasoning":
+		case loop.EventTypeCodexOutput:
+			m.addOutputLine(event.OutputLine, string(event.OutputType))
+		case loop.EventTypeCodexReasoning:
 			m.addReasoningLine(event.ReasoningText)
-		case "codex_tool":
+		case loop.EventTypeCodexTool:
 			m.currentTool = event.ToolName
-			if event.ToolStatus == "started" {
+			if event.ToolStatus == loop.ToolStatusStarted {
 				m.addOutputLine(fmt.Sprintf("> %s %s...", event.ToolName, event.ToolTarget), "tool_call")
 			} else {
 				m.addOutputLine(fmt.Sprintf("  Done: %s", event.ToolTarget), "tool_call")
@@ -315,7 +315,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.TaskIndex >= 0 && msg.TaskIndex < len(m.tasks) {
 			m.activeTaskIdx = msg.TaskIndex
 			m.tasks[msg.TaskIndex].Active = true
-			m.addLog("INFO", fmt.Sprintf("Started: %s", msg.TaskText))
+			m.addLog(string(loop.LogLevelInfo), fmt.Sprintf("Started: %s", msg.TaskText))
 		}
 		return m, nil
 
@@ -323,14 +323,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.TaskIndex >= 0 && msg.TaskIndex < len(m.tasks) {
 			m.tasks[msg.TaskIndex].Completed = true
 			m.tasks[msg.TaskIndex].Active = false
-			m.addLog("SUCCESS", fmt.Sprintf("Completed: %s", msg.TaskText))
+			m.addLog(string(loop.LogLevelSuccess), fmt.Sprintf("Completed: %s", msg.TaskText))
 		}
 		return m, nil
 
 	case TaskFailedMsg:
 		if msg.TaskIndex >= 0 && msg.TaskIndex < len(m.tasks) {
 			m.tasks[msg.TaskIndex].Active = false
-			m.addLog("ERROR", fmt.Sprintf("Failed: %s - %s", msg.TaskText, msg.Error))
+			m.addLog(string(loop.LogLevelError), fmt.Sprintf("Failed: %s - %s", msg.TaskText, msg.Error))
 		}
 		return m, nil
 	}

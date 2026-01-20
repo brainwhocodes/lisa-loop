@@ -4,8 +4,9 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
+
+	"github.com/brainwhocodes/ralph-codex/internal/project"
 )
 
 // LoadFixPlan loads remaining tasks from plan files in order of preference:
@@ -75,45 +76,27 @@ func parseTasksFromPlan(content, filename string) ([]string, error) {
 	return tasks, nil
 }
 
-// ProjectMode represents the type of Ralph project
-type ProjectMode string
+// ProjectMode is an alias to the unified project mode type
+type ProjectMode = project.ProjectMode
 
+// Mode constants delegated to project package
 const (
-	ModeImplement ProjectMode = "implement"
-	ModeRefactor  ProjectMode = "refactor"
-	ModeFix       ProjectMode = "fix"
-	ModeUnknown   ProjectMode = "unknown"
+	ModeImplement = project.ProjectModeImplement
+	ModeRefactor  = project.ProjectModeRefactor
+	ModeFix       = project.ProjectModeFix
+	ModeUnknown   = project.ProjectModeUnknown
 )
 
 // DetectProjectMode determines the project mode based on files present
+// Delegates to the unified project.DetectMode function
 func DetectProjectMode() ProjectMode {
-	// Implement mode: PRD.md + IMPLEMENTATION_PLAN.md
-	if fileExists("PRD.md") && fileExists("IMPLEMENTATION_PLAN.md") {
-		return ModeImplement
-	}
-	// Refactor mode: REFACTOR_PLAN.md (no input file required)
-	if fileExists("REFACTOR_PLAN.md") {
-		return ModeRefactor
-	}
-	// Fix mode: PROMPT.md + @fix_plan.md
-	if fileExists("PROMPT.md") && fileExists("@fix_plan.md") {
-		return ModeFix
-	}
-	return ModeUnknown
+	return project.DetectMode(".")
 }
 
 // GetPlanFileForMode returns the plan file path for a given mode
+// Delegates to the unified project.GetPlanFile function
 func GetPlanFileForMode(mode ProjectMode) string {
-	switch mode {
-	case ModeImplement:
-		return "IMPLEMENTATION_PLAN.md"
-	case ModeRefactor:
-		return "REFACTOR_PLAN.md"
-	case ModeFix:
-		return "@fix_plan.md"
-	default:
-		return ""
-	}
+	return project.GetPlanFile(mode)
 }
 
 // GetPromptForMode loads the appropriate prompt based on project mode
@@ -158,7 +141,7 @@ func GetPrompt() (string, error) {
 }
 
 // BuildContext builds loop context for Codex
-func BuildContext(promptPath string, loopNum int, remainingTasks []string, circuitState string, prevSummary string) (string, error) {
+func BuildContext(loopNum int, remainingTasks []string, circuitState string, prevSummary string) (string, error) {
 	var ctxBuilder strings.Builder
 
 	ctxBuilder.WriteString(fmt.Sprintf("\n--- RALPH LOOP CONTEXT ---\n"))
@@ -187,68 +170,14 @@ func InjectContext(prompt string, ctx string) string {
 }
 
 // GetProjectRoot returns the project root directory
+// Delegates to the unified project.FindProjectRoot function
 func GetProjectRoot() (string, error) {
-	pwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-
-	for {
-		// Look for Ralph project markers
-		markers := []string{
-			"IMPLEMENTATION_PLAN.md",
-			"REFACTOR_PLAN.md",
-			"PRD.md",
-			"REFACTOR.md",
-			"AGENTS.md",
-			"@fix_plan.md",
-			"PROMPT.md",
-			".git",
-		}
-		found := false
-
-		for _, marker := range markers {
-			if _, err := os.Stat(filepath.Join(pwd, marker)); err == nil {
-				found = true
-				break
-			}
-		}
-
-		if found {
-			return pwd, nil
-		}
-
-		parent := filepath.Dir(pwd)
-		if parent == pwd {
-			break
-		}
-
-		pwd = parent
-	}
-
-	return "", fmt.Errorf("could not find project root (no IMPLEMENTATION_PLAN.md, REFACTOR_PLAN.md, PRD.md, or .git found)")
+	root, _, err := project.FindProjectRoot("")
+	return root, err
 }
 
 // CheckProjectRoot verifies we're in a valid Ralph project
+// Delegates to the unified project.ValidateProjectDir function
 func CheckProjectRoot() error {
-	// A valid Ralph project needs one of:
-	// 1. PRD.md + IMPLEMENTATION_PLAN.md (implementation mode)
-	// 2. REFACTOR.md + REFACTOR_PLAN.md (refactor mode)
-	// 3. PROMPT.md + @fix_plan.md (fix mode / legacy)
-
-	implementationMode := fileExists("PRD.md") && fileExists("IMPLEMENTATION_PLAN.md")
-	refactorMode := fileExists("REFACTOR.md") && fileExists("REFACTOR_PLAN.md")
-	fixMode := fileExists("PROMPT.md") && fileExists("@fix_plan.md")
-
-	if !implementationMode && !refactorMode && !fixMode {
-		return fmt.Errorf("not a valid Ralph project. Need one of: (PRD.md + IMPLEMENTATION_PLAN.md), (REFACTOR.md + REFACTOR_PLAN.md), or (PROMPT.md + @fix_plan.md)")
-	}
-
-	return nil
-}
-
-// fileExists checks if a file exists
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+	return project.ValidateProjectDir(".")
 }
