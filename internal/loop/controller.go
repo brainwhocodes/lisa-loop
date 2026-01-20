@@ -33,6 +33,14 @@ type LoopEvent struct {
 	ToolName      string // Tool being called
 	ToolTarget    string // File path or command
 	ToolStatus    ToolStatus
+
+	// Analysis result fields (from RALPH_STATUS block)
+	AnalysisStatus     string  // WORKING, COMPLETE, BLOCKED
+	TasksCompleted     int     // Tasks completed this loop
+	FilesModified      int     // Files modified this loop
+	TestsStatus        string  // PASSING, FAILING, UNKNOWN
+	ExitSignal         bool    // Whether exit was signaled
+	ConfidenceScore    float64 // Confidence in completion (0-1)
 }
 
 // EventCallback is called when the controller has an update
@@ -152,6 +160,29 @@ func (c *Controller) emitCodexTool(toolName, target string, status ToolStatus) {
 		ToolTarget: target,
 		ToolStatus: status,
 	})
+}
+
+// emitAnalysis sends analysis results from RALPH_STATUS block
+func (c *Controller) emitAnalysis(result *analysis.Analysis) {
+	if result == nil {
+		return
+	}
+
+	event := LoopEvent{
+		Type:            EventTypeAnalysis,
+		LoopNumber:      c.loopNum,
+		ExitSignal:      result.ExitSignal,
+		ConfidenceScore: result.ConfidenceScore,
+	}
+
+	if result.Status != nil {
+		event.AnalysisStatus = result.Status.Status
+		event.TasksCompleted = result.Status.TasksCompleted
+		event.FilesModified = result.Status.FilesModified
+		event.TestsStatus = result.Status.TestsStatus
+	}
+
+	c.emit(event)
 }
 
 // Pause pauses the loop
@@ -318,9 +349,12 @@ func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
 			filesChanged = analysisResult.Status.FilesModified
 		}
 
+		// Emit analysis results to UI
+		c.emitAnalysis(analysisResult)
+
 		// If exit signal detected, persist it and signal stop
 		if analysisResult.ExitSignal {
-			c.emitLog(LogLevelInfo, "Exit signal detected in output")
+			c.emitLog(LogLevelSuccess, "✓ EXIT_SIGNAL: true - Work complete!")
 			exitSignals = append(exitSignals, fmt.Sprintf("loop_%d", c.loopNum+1))
 			_ = state.SaveExitSignals(exitSignals)
 			c.shouldStop = true
@@ -328,7 +362,7 @@ func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
 
 		// Check for completion based on confidence
 		if analysisResult.ConfidenceScore >= 0.9 && analysisResult.Status != nil && analysisResult.Status.Status == "COMPLETE" {
-			c.emitLog(LogLevelSuccess, "High-confidence completion detected")
+			c.emitLog(LogLevelSuccess, "✓ High-confidence completion detected (STATUS: COMPLETE)")
 			c.shouldStop = true
 		}
 	}

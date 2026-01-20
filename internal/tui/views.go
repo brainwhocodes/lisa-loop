@@ -110,7 +110,7 @@ func (m Model) renderHeader(width int) string {
 }
 
 // renderStatusBar renders the status bar with state indicator, spinner, and circuit state
-// Format: ● running                                    circuit closed
+// Format: ● running  STATUS: WORKING  tasks: 2  files: 3     circuit closed
 func (m Model) renderStatusBar(width int) string {
 	// State indicator with icon
 	var stateIcon, stateText string
@@ -142,6 +142,31 @@ func (m Model) renderStatusBar(width int) string {
 
 	leftStatus := stateStyle.Render(stateIcon + " " + stateText)
 
+	// Add analysis status in the middle if available
+	var midStatus string
+	if m.analysisStatus != "" {
+		var statusStyle lipgloss.Style
+		switch m.analysisStatus {
+		case "COMPLETE":
+			statusStyle = StyleSuccessMsg
+		case "BLOCKED":
+			statusStyle = StyleErrorMsg
+		default:
+			statusStyle = StyleInfoMsg
+		}
+		midStatus = StyleTextMuted.Render(" │ ") + statusStyle.Render(m.analysisStatus)
+
+		if m.tasksCompleted > 0 {
+			midStatus += StyleTextMuted.Render(fmt.Sprintf(" tasks:%d", m.tasksCompleted))
+		}
+		if m.filesModified > 0 {
+			midStatus += StyleTextMuted.Render(fmt.Sprintf(" files:%d", m.filesModified))
+		}
+		if m.exitSignal {
+			midStatus += StyleSuccessMsg.Render(" EXIT")
+		}
+	}
+
 	// Circuit state on right
 	circuitState := m.circuitState
 	if circuitState == "" {
@@ -165,14 +190,14 @@ func (m Model) renderStatusBar(width int) string {
 	rightStatus := StyleTextMuted.Render("circuit ") + circuitStyle.Render(circuitState)
 
 	// Calculate padding between left and right
-	leftWidth := lipgloss.Width(leftStatus)
+	leftWidth := lipgloss.Width(leftStatus) + lipgloss.Width(midStatus)
 	rightWidth := lipgloss.Width(rightStatus)
 	paddingWidth := width - leftWidth - rightWidth - 4
 	if paddingWidth < 1 {
 		paddingWidth = 1
 	}
 
-	statusContent := " " + leftStatus + strings.Repeat(" ", paddingWidth) + rightStatus
+	statusContent := " " + leftStatus + midStatus + strings.Repeat(" ", paddingWidth) + rightStatus
 
 	return StyleStatus.Copy().Width(width).Render(statusContent)
 }

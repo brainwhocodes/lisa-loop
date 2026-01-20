@@ -120,6 +120,14 @@ type Model struct {
 	outputLines    []string // Live output lines from Codex
 	reasoningLines []string // Reasoning/thinking output
 	currentTool    string   // Current tool being executed
+
+	// Analysis results (from RALPH_STATUS block)
+	analysisStatus  string  // WORKING, COMPLETE, BLOCKED
+	tasksCompleted  int     // Tasks completed this loop
+	filesModified   int     // Files modified this loop
+	testsStatus     string  // PASSING, FAILING, UNKNOWN
+	exitSignal      bool    // Whether exit was signaled
+	confidenceScore float64 // Confidence in completion (0-1)
 }
 
 // Init initializes model
@@ -290,6 +298,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.addOutputLine(fmt.Sprintf("> %s %s...", event.ToolName, event.ToolTarget), "tool_call")
 			} else {
 				m.addOutputLine(fmt.Sprintf("  Done: %s", event.ToolTarget), "tool_call")
+			}
+		case loop.EventTypeAnalysis:
+			// Update analysis results from RALPH_STATUS block
+			m.analysisStatus = event.AnalysisStatus
+			m.tasksCompleted = event.TasksCompleted
+			m.filesModified = event.FilesModified
+			m.testsStatus = event.TestsStatus
+			m.exitSignal = event.ExitSignal
+			m.confidenceScore = event.ConfidenceScore
+			// Update state if complete
+			if m.exitSignal || (m.confidenceScore >= 0.9 && m.analysisStatus == "COMPLETE") {
+				m.state = StateComplete
 			}
 		}
 		return m, nil

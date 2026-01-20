@@ -159,15 +159,16 @@ func BuildContext(loopNum int, remainingTasks []string, circuitState string, pre
 		ctxBuilder.WriteString(fmt.Sprintf("\nPrevious Loop Summary:\n%s\n", prevSummary))
 	}
 
-	// Add status reporting reminder
-	ctxBuilder.WriteString("\n** IMPORTANT: End your response with a RALPH_STATUS block **\n")
-	ctxBuilder.WriteString("Format:\n")
+	// Add task completion and status reporting reminder
+	ctxBuilder.WriteString("\n** IMPORTANT REMINDERS **\n")
+	ctxBuilder.WriteString("1. Update the plan file: change `- [ ]` to `- [x]` for completed tasks\n")
+	ctxBuilder.WriteString("2. End your response with a RALPH_STATUS block:\n")
 	ctxBuilder.WriteString("---RALPH_STATUS---\n")
 	ctxBuilder.WriteString("STATUS: WORKING | COMPLETE | BLOCKED\n")
 	ctxBuilder.WriteString("TASKS_COMPLETED_THIS_LOOP: <number>\n")
 	ctxBuilder.WriteString("FILES_MODIFIED: <number>\n")
 	ctxBuilder.WriteString("TESTS_STATUS: PASSING | FAILING | UNKNOWN\n")
-	ctxBuilder.WriteString("EXIT_SIGNAL: true (if all done) | false (if more work needed)\n")
+	ctxBuilder.WriteString("EXIT_SIGNAL: true (if ALL tasks [x]) | false (if work remains)\n")
 	ctxBuilder.WriteString("---END_RALPH_STATUS---\n")
 
 	ctxBuilder.WriteString(fmt.Sprintf("--- END LOOP CONTEXT ---\n\n"))

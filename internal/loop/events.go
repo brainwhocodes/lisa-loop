@@ -12,6 +12,7 @@ const (
 	EventTypeCodexOutput    EventType = "codex_output"
 	EventTypeCodexReasoning EventType = "codex_reasoning"
 	EventTypeCodexTool      EventType = "codex_tool"
+	EventTypeAnalysis       EventType = "analysis" // RALPH_STATUS analysis results
 )
 
 // LogLevel represents the severity level of a log entry
