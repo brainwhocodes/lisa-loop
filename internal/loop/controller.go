@@ -10,6 +10,7 @@ import (
 	"github.com/brainwhocodes/ralph-codex/internal/circuit"
 	"github.com/brainwhocodes/ralph-codex/internal/codex"
 	"github.com/brainwhocodes/ralph-codex/internal/config"
+	"github.com/brainwhocodes/ralph-codex/internal/runner"
 	"github.com/brainwhocodes/ralph-codex/internal/state"
 )
 
@@ -51,12 +52,13 @@ type Controller struct {
 	config        ControllerConfig
 	rateLimiter   *RateLimiter
 	breaker       *circuit.Breaker
-	codexRunner   *codex.Runner
+	runner        runner.Runner
 	loopNum       int
 	lastOutput    string
 	shouldStop    bool
 	eventCallback EventCallback
 	paused        bool
+	backend       string
 }
 
 // ControllerConfig holds configuration for the loop controller
@@ -67,37 +69,30 @@ type ControllerConfig struct {
 }
 
 // NewController creates a new loop controller
-func NewController(config Config, rateLimiter *RateLimiter, breaker *circuit.Breaker) *Controller {
-	codexConfig := codex.Config{
-		Backend:      config.Backend,
-		ProjectPath:  config.ProjectPath,
-		PromptPath:   config.PromptPath,
-		MaxCalls:     config.MaxCalls,
-		Timeout:      config.Timeout,
-		Verbose:      config.Verbose,
-		ResetCircuit: config.ResetCircuit,
-	}
-	codexRunner := codex.NewRunner(codexConfig)
+func NewController(cfg Config, rateLimiter *RateLimiter, breaker *circuit.Breaker) *Controller {
+	// Create runner based on backend selection
+	r := runner.New(cfg)
 
 	c := &Controller{
 		config: ControllerConfig{
-			MaxLoops:      config.MaxCalls,
-			MaxDuration:   time.Duration(config.Timeout) * time.Second,
+			MaxLoops:      cfg.MaxCalls,
+			MaxDuration:   time.Duration(cfg.Timeout) * time.Second,
 			CheckInterval: 5 * time.Second,
 		},
 		rateLimiter:   rateLimiter,
 		breaker:       breaker,
-		codexRunner:   codexRunner,
+		runner:        r,
 		loopNum:       0,
 		lastOutput:    "",
 		shouldStop:    false,
 		eventCallback: nil,
 		paused:        false,
+		backend:       cfg.Backend,
 	}
 
-	// Set up codex output callback for streaming
-	codexRunner.SetOutputCallback(func(event codex.Event) {
-		c.handleCodexEvent(event)
+	// Set up output callback for streaming
+	r.SetOutputCallback(func(event runner.Event) {
+		c.handleCodexEvent(codex.Event(event))
 	})
 
 	return c
@@ -311,12 +306,16 @@ func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
 
 	promptWithContext := InjectContext(prompt, loopContext)
 
-	// Execute Codex
-	c.emitLog(LogLevelInfo, fmt.Sprintf("Loop %d: Executing Codex", c.loopNum+1))
+	// Execute runner (Codex CLI or OpenCode)
+	backendName := "Codex"
+	if c.backend == "opencode" {
+		backendName = "OpenCode"
+	}
+	c.emitLog(LogLevelInfo, fmt.Sprintf("Loop %d: Executing %s", c.loopNum+1, backendName))
 	c.emitUpdate("codex_running")
-	c.emitCodexOutput(fmt.Sprintf("Starting Codex execution (loop %d)...", c.loopNum+1), OutputTypeRaw)
+	c.emitCodexOutput(fmt.Sprintf("Starting %s execution (loop %d)...", backendName, c.loopNum+1), OutputTypeRaw)
 	c.emitCodexOutput(fmt.Sprintf("Prompt size: %d bytes", len(promptWithContext)), OutputTypeRaw)
-	output, _, err := c.codexRunner.Run(promptWithContext)
+	output, _, err := c.runner.Run(promptWithContext)
 
 	if err != nil {
 		c.lastOutput = fmt.Sprintf("Error: %v", err)

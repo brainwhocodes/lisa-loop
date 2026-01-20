@@ -37,3 +37,19 @@
   - Session creation and message sending
   - Error handling for HTTP errors
   - Session file persistence and cleanup
+
+## Commit 3: Runner integration + TUI loop behavior
+
+- Created `internal/runner` package with:
+  - `Runner` interface for backend abstraction
+  - `New()` factory function that selects backend based on config
+  - `codexWrapper` and `openCodeWrapper` adapters
+
+- Updated `internal/loop/controller.go`:
+  - Now uses `runner.Runner` interface instead of concrete `codex.Runner`
+  - Dynamically selects backend based on `config.Backend` setting
+  - Log messages show correct backend name (Codex or OpenCode)
+
+- Unit tests for runner package:
+  - Backend selection tests (default, cli, opencode)
+  - Callback setting verification
