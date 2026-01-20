@@ -28,6 +28,15 @@ func main() {
 		useMonitor bool
 		verbose    bool
 
+		// Backend selection
+		backend string
+
+		// OpenCode backend settings
+		opencodeServerURL string
+		opencodeUsername  string
+		opencodePassword  string
+		opencodeModelID   string
+
 		setupName   string
 		setupPrompt string
 		setupInit   bool
@@ -44,8 +53,17 @@ func main() {
 
 	fs.StringVar(&projectDir, "project", ".", "Project directory")
 	fs.StringVar(&promptFile, "prompt", "PROMPT.md", "Prompt file")
-	fs.IntVar(&maxCalls, "calls", 3, "Max loop iterations (default: 3)")
+	fs.IntVar(&maxCalls, "calls", 3, "Max loop iterations (default: 3, 10 for opencode backend)")
 	fs.IntVar(&timeout, "timeout", 600, "Codex timeout (seconds)")
+
+	// Backend selection
+	fs.StringVar(&backend, "backend", "cli", "Backend: cli or opencode")
+
+	// OpenCode backend settings (with env fallbacks)
+	fs.StringVar(&opencodeServerURL, "opencode-url", "", "OpenCode server URL (env: OPENCODE_SERVER_URL)")
+	fs.StringVar(&opencodeUsername, "opencode-user", "", "OpenCode username (env: OPENCODE_SERVER_USERNAME)")
+	fs.StringVar(&opencodePassword, "opencode-pass", "", "OpenCode password (env: OPENCODE_SERVER_PASSWORD)")
+	fs.StringVar(&opencodeModelID, "opencode-model", "", "OpenCode model ID (env: OPENCODE_MODEL_ID, default: glm-4.7)")
 
 	fs.StringVar(&setupName, "name", "", "Project name (for setup command)")
 	fs.StringVar(&setupPrompt, "description", "", "Project description for Codex to generate customized templates")
@@ -63,9 +81,28 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Apply environment variable fallbacks for OpenCode settings
+	opencodeServerURL = envFallback(opencodeServerURL, "OPENCODE_SERVER_URL", "")
+	opencodeUsername = envFallback(opencodeUsername, "OPENCODE_SERVER_USERNAME", "opencode")
+	opencodePassword = envFallback(opencodePassword, "OPENCODE_SERVER_PASSWORD", "")
+	opencodeModelID = envFallback(opencodeModelID, "OPENCODE_MODEL_ID", "glm-4.7")
+
+	// Default max calls to 10 for opencode backend if not explicitly set
+	if backend == "opencode" && !isFlagSet(fs, "calls") {
+		maxCalls = 10
+	}
+
+	// Build OpenCode settings struct for passing to handlers
+	ocSettings := openCodeSettings{
+		serverURL: opencodeServerURL,
+		username:  opencodeUsername,
+		password:  opencodePassword,
+		modelID:   opencodeModelID,
+	}
+
 	switch command {
 	case "init":
-		handleInitCommand(initMode, projectDir, maxCalls, timeout, verbose)
+		handleInitCommand(initMode, projectDir, maxCalls, timeout, verbose, backend, ocSettings)
 	case "setup":
 		handleSetupCommand(setupName, setupPrompt, setupInit, withGit, verbose)
 	case "import":
@@ -75,7 +112,7 @@ func main() {
 	case "reset-circuit":
 		handleResetCircuitCommand(projectDir)
 	case "run", "help", "version":
-		handleSubcommands(command, projectDir, promptFile, maxCalls, timeout, useMonitor, verbose)
+		handleSubcommands(command, projectDir, promptFile, maxCalls, timeout, useMonitor, verbose, backend, ocSettings)
 	default:
 		fmt.Fprintf(os.Stderr, "Error: unknown command '%s'\n\n", command)
 		printHelp()
@@ -83,7 +120,15 @@ func main() {
 	}
 }
 
-func handleSubcommands(command, projectDir, promptFile string, maxCalls, timeout int, useMonitor, verbose bool) {
+// openCodeSettings holds OpenCode backend configuration
+type openCodeSettings struct {
+	serverURL string
+	username  string
+	password  string
+	modelID   string
+}
+
+func handleSubcommands(command, projectDir, promptFile string, maxCalls, timeout int, useMonitor, verbose bool, backend string, ocSettings openCodeSettings) {
 	switch command {
 	case "help", "--help", "-h":
 		printHelp()
@@ -93,11 +138,11 @@ func handleSubcommands(command, projectDir, promptFile string, maxCalls, timeout
 		fmt.Println("Charm TUI scaffold - Complete")
 		os.Exit(0)
 	default:
-		handleRunCommand(projectDir, promptFile, maxCalls, timeout, useMonitor, verbose)
+		handleRunCommand(projectDir, promptFile, maxCalls, timeout, useMonitor, verbose, backend, ocSettings)
 	}
 }
 
-func handleInitCommand(mode string, projectDir string, maxCalls int, timeout int, verbose bool) {
+func handleInitCommand(mode string, projectDir string, maxCalls int, timeout int, verbose bool, backend string, ocSettings openCodeSettings) {
 	if err := os.Chdir(projectDir); err != nil {
 		fmt.Fprintf(os.Stderr, "Error changing to project directory: %v\n", err)
 		os.Exit(1)
@@ -172,13 +217,17 @@ func handleInitCommand(mode string, projectDir string, maxCalls int, timeout int
 
 	// Now launch the TUI
 	config := loop.Config{
-		Backend:      "cli",
-		ProjectPath:  ".",
-		PromptPath:   "PROMPT.md",
-		MaxCalls:     maxCalls,
-		Timeout:      timeout,
-		Verbose:      verbose,
-		ResetCircuit: false,
+		Backend:            backend,
+		ProjectPath:        ".",
+		PromptPath:         "PROMPT.md",
+		MaxCalls:           maxCalls,
+		Timeout:            timeout,
+		Verbose:            verbose,
+		ResetCircuit:       false,
+		OpenCodeServerURL:  ocSettings.serverURL,
+		OpenCodeUsername:   ocSettings.username,
+		OpenCodePassword:   ocSettings.password,
+		OpenCodeModelID:    ocSettings.modelID,
 	}
 
 	rateLimiter := loop.NewRateLimiter(config.MaxCalls, 1)
@@ -342,7 +391,7 @@ func handleResetCircuitCommand(projectPath string) {
 	fmt.Println("  ralph --monitor")
 }
 
-func handleRunCommand(projectPath string, promptFile string, maxCalls int, timeout int, useMonitor bool, verbose bool) {
+func handleRunCommand(projectPath string, promptFile string, maxCalls int, timeout int, useMonitor bool, verbose bool, backend string, ocSettings openCodeSettings) {
 	if err := os.Chdir(projectPath); err != nil {
 		fmt.Fprintf(os.Stderr, "Error changing to project directory: %v\n", err)
 		os.Exit(1)
@@ -355,13 +404,17 @@ func handleRunCommand(projectPath string, promptFile string, maxCalls int, timeo
 	}
 
 	config := loop.Config{
-		Backend:      "cli",
-		ProjectPath:  projectPath,
-		PromptPath:   promptFile,
-		MaxCalls:     maxCalls,
-		Timeout:      timeout,
-		Verbose:      verbose,
-		ResetCircuit: false,
+		Backend:            backend,
+		ProjectPath:        projectPath,
+		PromptPath:         promptFile,
+		MaxCalls:           maxCalls,
+		Timeout:            timeout,
+		Verbose:            verbose,
+		ResetCircuit:       false,
+		OpenCodeServerURL:  ocSettings.serverURL,
+		OpenCodeUsername:   ocSettings.username,
+		OpenCodePassword:   ocSettings.password,
+		OpenCodeModelID:    ocSettings.modelID,
 	}
 
 	rateLimiter := loop.NewRateLimiter(config.MaxCalls, 1)
@@ -527,10 +580,17 @@ func printHelp() {
 	fmt.Println("Options:")
 	fmt.Println("  --project <path>        Project directory (default: .)")
 	fmt.Println("  --prompt <file>         Prompt file (default: PROMPT.md)")
-	fmt.Println("  --calls <number>        Max loop iterations (default: 3)")
+	fmt.Println("  --calls <number>        Max loop iterations (default: 3, 10 for opencode)")
 	fmt.Println("  --timeout <seconds>     Codex timeout (default: 600)")
 	fmt.Println("  --monitor               Enable integrated TUI monitoring")
 	fmt.Println("  --verbose               Verbose output")
+	fmt.Println("")
+	fmt.Println("Backend options:")
+	fmt.Println("  --backend <name>        Backend: cli or opencode (default: cli)")
+	fmt.Println("  --opencode-url <url>    OpenCode server URL (env: OPENCODE_SERVER_URL)")
+	fmt.Println("  --opencode-user <user>  OpenCode username (env: OPENCODE_SERVER_USERNAME, default: opencode)")
+	fmt.Println("  --opencode-pass <pass>  OpenCode password (env: OPENCODE_SERVER_PASSWORD)")
+	fmt.Println("  --opencode-model <id>   OpenCode model ID (env: OPENCODE_MODEL_ID, default: glm-4.7)")
 	fmt.Println("")
 	fmt.Println("Init command options:")
 	fmt.Println("  --mode <mode>           Mode: implementation, fix, or refactor (auto-detect)")
@@ -551,4 +611,27 @@ func printHelp() {
 	fmt.Println("  p            Pause/resume")
 	fmt.Println("  l            Toggle log view")
 	fmt.Println("  ?            Show help")
+}
+
+// envFallback returns the flag value if set, otherwise checks the environment variable,
+// and finally returns the default value.
+func envFallback(flagValue, envName, defaultValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if env := os.Getenv(envName); env != "" {
+		return env
+	}
+	return defaultValue
+}
+
+// isFlagSet checks if a flag was explicitly set on the command line.
+func isFlagSet(fs *flag.FlagSet, name string) bool {
+	found := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
 }
