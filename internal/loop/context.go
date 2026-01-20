@@ -75,14 +75,86 @@ func parseTasksFromPlan(content, filename string) ([]string, error) {
 	return tasks, nil
 }
 
-// GetPrompt loads the main prompt from PROMPT.md
-func GetPrompt() (string, error) {
-	data, err := os.ReadFile("PROMPT.md")
-	if err != nil {
-		return "", fmt.Errorf("failed to read PROMPT.md: %w", err)
-	}
+// ProjectMode represents the type of Ralph project
+type ProjectMode string
 
-	return string(data), nil
+const (
+	ModeImplement ProjectMode = "implement"
+	ModeRefactor  ProjectMode = "refactor"
+	ModeFix       ProjectMode = "fix"
+	ModeUnknown   ProjectMode = "unknown"
+)
+
+// DetectProjectMode determines the project mode based on files present
+func DetectProjectMode() ProjectMode {
+	// Implement mode: PRD.md + IMPLEMENTATION_PLAN.md
+	if fileExists("PRD.md") && fileExists("IMPLEMENTATION_PLAN.md") {
+		return ModeImplement
+	}
+	// Refactor mode: REFACTOR_PLAN.md (no input file required)
+	if fileExists("REFACTOR_PLAN.md") {
+		return ModeRefactor
+	}
+	// Fix mode: PROMPT.md + @fix_plan.md
+	if fileExists("PROMPT.md") && fileExists("@fix_plan.md") {
+		return ModeFix
+	}
+	return ModeUnknown
+}
+
+// GetPlanFileForMode returns the plan file path for a given mode
+func GetPlanFileForMode(mode ProjectMode) string {
+	switch mode {
+	case ModeImplement:
+		return "IMPLEMENTATION_PLAN.md"
+	case ModeRefactor:
+		return "REFACTOR_PLAN.md"
+	case ModeFix:
+		return "@fix_plan.md"
+	default:
+		return ""
+	}
+}
+
+// GetPromptForMode loads the appropriate prompt based on project mode
+func GetPromptForMode(mode ProjectMode) (string, error) {
+	switch mode {
+	case ModeImplement:
+		// Use PRD.md as the prompt for implement mode
+		data, err := os.ReadFile("PRD.md")
+		if err != nil {
+			return "", fmt.Errorf("failed to read PRD.md: %w", err)
+		}
+		return string(data), nil
+
+	case ModeRefactor:
+		// Use REFACTOR_PLAN.md as context for refactor mode
+		data, err := os.ReadFile("REFACTOR_PLAN.md")
+		if err != nil {
+			return "", fmt.Errorf("failed to read REFACTOR_PLAN.md: %w", err)
+		}
+		return string(data), nil
+
+	case ModeFix:
+		// Use PROMPT.md for fix mode
+		data, err := os.ReadFile("PROMPT.md")
+		if err != nil {
+			return "", fmt.Errorf("failed to read PROMPT.md: %w", err)
+		}
+		return string(data), nil
+
+	default:
+		return "", fmt.Errorf("unknown project mode")
+	}
+}
+
+// GetPrompt loads the main prompt based on detected project mode
+func GetPrompt() (string, error) {
+	mode := DetectProjectMode()
+	if mode == ModeUnknown {
+		return "", fmt.Errorf("could not detect project mode - need PRD.md, REFACTOR_PLAN.md, or PROMPT.md")
+	}
+	return GetPromptForMode(mode)
 }
 
 // BuildContext builds loop context for Codex

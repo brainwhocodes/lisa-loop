@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/brainwhocodes/ralph-codex/internal/codex"
 	"github.com/charmbracelet/log"
 )
 
@@ -130,7 +131,7 @@ func InitFromPRD(opts InitOptions) (*InitResult, error) {
 }
 
 // generateWithCodex calls Codex CLI and returns the generated content
-// Output is streamed to the console in real-time
+// Output is streamed to the console in real-time using the unified event parser
 func generateWithCodex(prompt string, verbose bool) (string, error) {
 	// Build command
 	cmd := exec.Command(
@@ -177,7 +178,7 @@ func generateWithCodex(prompt string, verbose bool) (string, error) {
 		}
 	}()
 
-	// Read and parse JSONL output, streaming text to console
+	// Read and parse JSONL output using unified parser
 	var content strings.Builder
 	scanner := bufio.NewScanner(stdout)
 	// Increase scanner buffer for large outputs
@@ -197,60 +198,26 @@ func generateWithCodex(prompt string, verbose bool) (string, error) {
 			continue
 		}
 
-		// Look for message content in the event
-		if eventType, ok := event["type"].(string); ok {
-			// Handle item.completed events (codex exec format)
-			if eventType == "item.completed" {
-				if item, ok := event["item"].(map[string]interface{}); ok {
-					itemType, _ := item["type"].(string)
-					text, hasText := item["text"].(string)
-
-					if hasText && text != "" {
-						// Log reasoning items, capture agent messages
-						if itemType == "reasoning" {
-							log.Debug(text)
-						} else if itemType == "agent_message" {
-							log.Info("Generated plan content")
-							content.WriteString(text)
-						}
-					}
-				}
-			}
-			// Handle streaming content delta - print as it arrives
-			if eventType == "content_block_delta" {
-				if delta, ok := event["delta"].(map[string]interface{}); ok {
-					if text, ok := delta["text"].(string); ok {
-						fmt.Print(text) // Stream to console
-						content.WriteString(text)
-					}
-				}
-			}
-			// Handle complete message
-			if eventType == "message" {
-				if msgContent, ok := event["content"].(string); ok {
-					fmt.Println(msgContent)
-					content.WriteString(msgContent)
-				}
-			}
-			// Handle assistant message with content array
-			if eventType == "assistant" || eventType == "message" {
-				if contentArr, ok := event["content"].([]interface{}); ok {
-					for _, c := range contentArr {
-						if contentMap, ok := c.(map[string]interface{}); ok {
-							if text, ok := contentMap["text"].(string); ok {
-								fmt.Print(text) // Stream to console
-								content.WriteString(text)
-							}
-						}
-					}
-				}
-			}
+		// Use unified event parser
+		parsed := codex.ParseEvent(event)
+		if parsed == nil {
+			continue
 		}
 
-		// Also check for direct message field
-		if msg, ok := event["message"].(string); ok {
-			fmt.Print(msg)
-			content.WriteString(msg)
+		switch parsed.Type {
+		case "reasoning":
+			if verbose && parsed.Text != "" {
+				log.Debug(parsed.Text)
+			}
+		case "message", "delta":
+			if parsed.Text != "" {
+				fmt.Print(parsed.Text) // Stream to console
+				content.WriteString(parsed.Text)
+			}
+		case "tool_call":
+			if verbose && parsed.ToolName != "" {
+				log.Debug("Tool", "name", parsed.ToolName, "target", parsed.ToolTarget)
+			}
 		}
 	}
 

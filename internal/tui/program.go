@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -19,28 +20,72 @@ type Program struct {
 }
 
 // NewProgram creates a new TUI program
-func NewProgram(config codex.Config, controller *loop.Controller) *Program {
-	planInfo := loadTasks()
+// If explicitMode is provided (non-empty), use it instead of auto-detecting
+func NewProgram(config codex.Config, controller *loop.Controller, explicitMode ...loop.ProjectMode) *Program {
+	var projectMode loop.ProjectMode
+	if len(explicitMode) > 0 && explicitMode[0] != "" {
+		projectMode = explicitMode[0]
+	} else {
+		projectMode = loop.DetectProjectMode()
+	}
+	planInfo := loadTasksForMode(projectMode)
+
+	// Determine initial state and status based on loaded files
+	initialState := StateInitializing
+	initialStatus := "Ready to start"
+	var initialErr error
+	var logs []string
+
+	// Validate project mode
+	if projectMode == loop.ModeUnknown {
+		initialState = StateError
+		initialStatus = "Invalid project - no mode detected"
+		initialErr = fmt.Errorf("could not detect project mode")
+		logs = append(logs, formatLog("ERROR", "No valid project mode detected. Need PRD.md+IMPLEMENTATION_PLAN.md, REFACTOR_PLAN.md, or PROMPT.md+@fix_plan.md"))
+	} else {
+		// Try to load prompt for the detected mode
+		prompt, err := loop.GetPromptForMode(projectMode)
+		if err != nil {
+			initialState = StateError
+			initialStatus = "Failed to load prompt"
+			initialErr = err
+			logs = append(logs, formatLog("ERROR", err.Error()))
+		} else {
+			logs = append(logs, formatLog("INFO", fmt.Sprintf("Loaded %s mode", projectMode)))
+			logs = append(logs, formatLog("INFO", fmt.Sprintf("Prompt size: %d bytes", len(prompt))))
+		}
+
+		// Log plan file status
+		if planInfo.Filename != "" {
+			logs = append(logs, formatLog("INFO", fmt.Sprintf("Loaded %d tasks from %s", len(planInfo.Tasks), planInfo.Filename)))
+		} else {
+			logs = append(logs, formatLog("WARN", "No plan file found"))
+		}
+	}
 
 	model := Model{
-		state:         StateInitializing,
-		status:        "Ready to start",
-		loopNumber:    0,
-		maxCalls:      config.MaxCalls,
-		callsUsed:     0,
-		circuitState:  "CLOSED",
-		logs:          []string{},
-		activeView:    "status",
-		quitting:      false,
-		err:           nil,
-		startTime:     time.Now(),
-		width:         80,
-		height:        24,
-		tasks:         planInfo.Tasks,
-		planFile:      planInfo.Filename,
-		activity:      "",
-		controller:    controller,
-		activeTaskIdx: -1,
+		state:          initialState,
+		status:         initialStatus,
+		loopNumber:     0,
+		maxCalls:       config.MaxCalls,
+		callsUsed:      0,
+		circuitState:   "CLOSED",
+		logs:           logs,
+		activeView:     "status",
+		viewMode:       ViewModeSplit,
+		quitting:       false,
+		err:            initialErr,
+		startTime:      time.Now(),
+		width:          80,
+		height:         24,
+		tasks:          planInfo.Tasks,
+		planFile:       planInfo.Filename,
+		projectMode:    projectMode,
+		activity:       "",
+		controller:     controller,
+		activeTaskIdx:  -1,
+		outputLines:    []string{},
+		reasoningLines: []string{},
 	}
 
 	return &Program{
@@ -49,16 +94,43 @@ func NewProgram(config codex.Config, controller *loop.Controller) *Program {
 	}
 }
 
+// formatLog formats a log entry with timestamp
+func formatLog(level, message string) string {
+	return fmt.Sprintf("[%s] %s: %s", time.Now().Format("15:04:05"), level, message)
+}
+
 // PlanFileInfo holds info about loaded plan file
 type PlanFileInfo struct {
 	Filename string
 	Tasks    []Task
 }
 
-// loadTasks reads tasks from plan files in order of preference:
-// 1. IMPLEMENTATION_PLAN.md (implementation mode)
-// 2. REFACTOR_PLAN.md (refactor mode)
-// 3. @fix_plan.md (fix mode)
+// loadTasksForMode reads tasks from the plan file for the given mode
+func loadTasksForMode(mode loop.ProjectMode) PlanFileInfo {
+	planFile := loop.GetPlanFileForMode(mode)
+	if planFile == "" {
+		return PlanFileInfo{
+			Filename: "",
+			Tasks:    []Task{},
+		}
+	}
+
+	data, err := os.ReadFile(planFile)
+	if err != nil {
+		return PlanFileInfo{
+			Filename: "",
+			Tasks:    []Task{},
+		}
+	}
+
+	tasks := parseTasksFromData(string(data))
+	return PlanFileInfo{
+		Filename: planFile,
+		Tasks:    tasks,
+	}
+}
+
+// loadTasks reads tasks - kept for backwards compatibility, tries all plan files
 func loadTasks() PlanFileInfo {
 	// Try plan files in order of preference
 	planFiles := []string{

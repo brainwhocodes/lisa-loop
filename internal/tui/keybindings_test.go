@@ -100,24 +100,28 @@ func TestModelResetCircuit(t *testing.T) {
 // TestRenderCircuitView tests circuit breaker view rendering
 func TestRenderCircuitView(t *testing.T) {
 	tests := []struct {
-		name          string
-		circuitState  string
-		shouldContain string
+		name           string
+		circuitState   string
+		expectedLabel  string
+		shouldContain  string
 	}{
 		{
-			name:          "CLOSED state",
-			circuitState:  "CLOSED",
-			shouldContain: "operational",
+			name:           "CLOSED state",
+			circuitState:   "CLOSED",
+			expectedLabel:  "closed",
+			shouldContain:  "operational",
 		},
 		{
-			name:          "HALF_OPEN state",
-			circuitState:  "HALF_OPEN",
-			shouldContain: "monitoring",
+			name:           "HALF_OPEN state",
+			circuitState:   "HALF_OPEN",
+			expectedLabel:  "half-open",
+			shouldContain:  "monitoring",
 		},
 		{
-			name:          "OPEN state",
-			circuitState:  "OPEN",
-			shouldContain: "halted",
+			name:           "OPEN state",
+			circuitState:   "OPEN",
+			expectedLabel:  "open",
+			shouldContain:  "halted",
 		},
 	}
 
@@ -129,12 +133,12 @@ func TestRenderCircuitView(t *testing.T) {
 
 			result := model.renderCircuitView()
 
-			if !contains(result, "Circuit Breaker Status") {
+			if !contains(result, "Circuit Breaker") {
 				t.Error("View should contain header")
 			}
 
-			if !contains(result, tt.circuitState) {
-				t.Errorf("View should contain state %s", tt.circuitState)
+			if !contains(result, tt.expectedLabel) {
+				t.Errorf("View should contain state label '%s'", tt.expectedLabel)
 			}
 
 			if !contains(result, tt.shouldContain) {
@@ -152,8 +156,9 @@ func TestRenderCircuitViewUnknownState(t *testing.T) {
 
 	result := model.renderCircuitView()
 
-	if !contains(result, "UNKNOWN") {
-		t.Error("View should contain UNKNOWN state")
+	// Unknown state is rendered in lowercase
+	if !contains(result, "unknown") {
+		t.Error("View should contain unknown state label")
 	}
 
 	if !contains(result, "Unknown circuit state") {

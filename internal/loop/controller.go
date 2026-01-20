@@ -16,13 +16,21 @@ type Config = config.Config
 
 // LoopEvent represents an event from the loop controller
 type LoopEvent struct {
-	Type         string // "loop_update", "log", "state_change", "status"
+	Type         string // "loop_update", "log", "state_change", "status", "codex_output", "codex_reasoning", "codex_tool"
 	LoopNumber   int
 	CallsUsed    int
 	Status       string
 	LogMessage   string
 	LogLevel     string // INFO, WARN, ERROR, SUCCESS
 	CircuitState string
+
+	// Codex output streaming fields
+	OutputLine    string // Raw output line
+	OutputType    string // "reasoning", "agent_message", "tool_call", "raw"
+	ReasoningText string // Reasoning/thinking text
+	ToolName      string // Tool being called
+	ToolTarget    string // File path or command
+	ToolStatus    string // "started", "completed"
 }
 
 // EventCallback is called when the controller has an update
@@ -61,7 +69,7 @@ func NewController(config Config, rateLimiter *RateLimiter, breaker *circuit.Bre
 	}
 	codexRunner := codex.NewRunner(codexConfig)
 
-	return &Controller{
+	c := &Controller{
 		config: ControllerConfig{
 			MaxLoops:      config.MaxCalls,
 			MaxDuration:   time.Duration(config.Timeout) * time.Second,
@@ -76,6 +84,13 @@ func NewController(config Config, rateLimiter *RateLimiter, breaker *circuit.Bre
 		eventCallback: nil,
 		paused:        false,
 	}
+
+	// Set up codex output callback for streaming
+	codexRunner.SetOutputCallback(func(event codex.Event) {
+		c.handleCodexEvent(event)
+	})
+
+	return c
 }
 
 // SetEventCallback sets the callback for loop events
@@ -107,6 +122,33 @@ func (c *Controller) emitUpdate(status string) {
 		CallsUsed:    c.rateLimiter.CallsMade(),
 		Status:       status,
 		CircuitState: c.breaker.GetState().String(),
+	})
+}
+
+// emitCodexOutput sends a codex output event
+func (c *Controller) emitCodexOutput(line, outputType string) {
+	c.emit(LoopEvent{
+		Type:       "codex_output",
+		OutputLine: line,
+		OutputType: outputType,
+	})
+}
+
+// emitCodexReasoning sends a codex reasoning event
+func (c *Controller) emitCodexReasoning(text string) {
+	c.emit(LoopEvent{
+		Type:          "codex_reasoning",
+		ReasoningText: text,
+	})
+}
+
+// emitCodexTool sends a codex tool call event
+func (c *Controller) emitCodexTool(toolName, target, status string) {
+	c.emit(LoopEvent{
+		Type:       "codex_tool",
+		ToolName:   toolName,
+		ToolTarget: target,
+		ToolStatus: status,
 	})
 }
 
@@ -239,6 +281,8 @@ func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
 	// Execute Codex
 	c.emitLog("INFO", fmt.Sprintf("Loop %d: Executing Codex", c.loopNum+1))
 	c.emitUpdate("codex_running")
+	c.emitCodexOutput(fmt.Sprintf("Starting Codex execution (loop %d)...", c.loopNum+1), "raw")
+	c.emitCodexOutput(fmt.Sprintf("Prompt size: %d bytes", len(promptWithContext)), "raw")
 	output, _, err := c.codexRunner.Run(promptWithContext)
 
 	if err != nil {
@@ -345,5 +389,44 @@ func (c *Controller) GetStats() map[string]interface{} {
 		"rate_limiter":    c.rateLimiter.GetStats(),
 		"circuit_breaker": c.breaker.GetStats(),
 		"last_output":     c.lastOutput,
+	}
+}
+
+// handleCodexEvent processes streaming events from codex and emits them to TUI
+// Uses the unified event parser from the codex package
+func (c *Controller) handleCodexEvent(event codex.Event) {
+	parsed := codex.ParseEvent(event)
+	if parsed == nil {
+		return
+	}
+
+	// Emit based on parsed event type
+	switch parsed.Type {
+	case "reasoning":
+		if parsed.Text != "" {
+			c.emitCodexReasoning(parsed.Text)
+		}
+
+	case "message", "delta":
+		if parsed.Text != "" {
+			c.emitCodexOutput(parsed.Text, "agent_message")
+		}
+
+	case "tool_call", "tool_result":
+		if parsed.ToolName != "" {
+			c.emitCodexTool(parsed.ToolName, parsed.ToolTarget, parsed.ToolStatus)
+		}
+
+	case "lifecycle":
+		// Lifecycle events (start, stop, etc.) - just show the type
+		if parsed.RawType != "" {
+			c.emitCodexOutput(fmt.Sprintf(">>> %s", parsed.RawType), "raw")
+		}
+
+	default:
+		// Unknown event with text
+		if parsed.Text != "" {
+			c.emitCodexOutput(parsed.Text, "raw")
+		}
 	}
 }

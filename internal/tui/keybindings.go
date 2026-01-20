@@ -88,11 +88,12 @@ func GetKeybindingHelp() string {
 	var builder strings.Builder
 
 	for _, section := range sections {
-		builder.WriteString(StyleHeader.Render(section.Title))
-		builder.WriteString("\n\n")
+		// Section title with Crush-style subtle formatting
+		builder.WriteString(StylePaneHeader.Render(" " + section.Title))
+		builder.WriteString("\n")
 
 		for _, keybinding := range section.Keys {
-			builder.WriteString(fmt.Sprintf("  %s %s\n",
+			builder.WriteString(fmt.Sprintf("   %s %s\n",
 				StyleHelpKey.Render(keybinding.Key),
 				StyleHelpDesc.Render(keybinding.Description)))
 		}
@@ -114,18 +115,18 @@ func (m Model) renderHelpView() string {
 		height = 20
 	}
 
-	const headerHeight = 3
+	const headerHeight = 1
 	const footerHeight = 1
 
-	header := StyleHeader.Copy().Width(width).Render("Ralph Codex - Help")
+	header := m.renderHeader(width)
 
-	version := StyleHelpDesc.Render("Version 1.0.0")
+	version := StyleTextMuted.Render(" Version 1.0.0")
 
-	divider := StyleDivider.Copy().Width(width).Render(strings.Repeat("─", width))
+	divider := StyleDivider.Render(strings.Repeat(DividerChar, width-4))
 
 	helpContent := GetKeybindingHelp()
 
-	middleContent := version + "\n" + divider + "\n\n" + helpContent
+	middleContent := "\n" + version + "\n\n" + divider + "\n\n" + helpContent
 	middleHeight := height - headerHeight - footerHeight - 2
 	if middleHeight < 10 {
 		middleHeight = 10
@@ -136,11 +137,12 @@ func (m Model) renderHelpView() string {
 		Height(middleHeight).
 		Render(middleContent)
 
-	// Footer
-	footer := StyleStatus.Copy().Width(width).Render(
-		fmt.Sprintf(" %s Return to status  %s",
+	// Footer with Crush-style
+	footer := StyleFooter.Copy().Width(width).Render(
+		fmt.Sprintf(" %s return%s%s",
 			StyleHelpKey.Render("?"),
-			StyleInfoMsg.Render("Tip: Use --monitor flag for TUI mode")),
+			StyleTextSubtle.Render(MetaDotSeparator),
+			StyleTextMuted.Render("Use --monitor flag for TUI mode")),
 	)
 
 	return lipgloss.JoinVertical(lipgloss.Left,

@@ -159,6 +159,17 @@ func handleInitCommand(mode string, projectDir string, maxCalls int, timeout int
 	fmt.Println("🎯 Launching development loop...")
 	fmt.Println()
 
+	// Convert project mode to loop mode for TUI
+	var loopMode loop.ProjectMode
+	switch result.Mode {
+	case project.ModeImplementation:
+		loopMode = loop.ModeImplement
+	case project.ModeRefactor:
+		loopMode = loop.ModeRefactor
+	case project.ModeFix:
+		loopMode = loop.ModeFix
+	}
+
 	// Now launch the TUI
 	config := loop.Config{
 		Backend:      "cli",
@@ -177,8 +188,8 @@ func handleInitCommand(mode string, projectDir string, maxCalls int, timeout int
 	ctx, cancel := context.WithCancel(context.Background())
 	setupGracefulShutdown(cancel, controller)
 
-	// Always use TUI after init
-	runWithMonitor(ctx, controller, config, verbose)
+	// Always use TUI after init with explicit mode
+	runWithMonitor(ctx, controller, config, verbose, loopMode)
 }
 
 func handleSetupCommand(projectName string, prompt string, init bool, withGit bool, verbose bool) {
@@ -367,7 +378,7 @@ func handleRunCommand(projectPath string, promptFile string, maxCalls int, timeo
 	}
 }
 
-func runWithMonitor(ctx context.Context, controller *loop.Controller, config loop.Config, verbose bool) {
+func runWithMonitor(ctx context.Context, controller *loop.Controller, config loop.Config, verbose bool, explicitMode ...loop.ProjectMode) {
 	fmt.Printf("🚀 Starting Ralph Codex with TUI monitoring (max %d calls)...\n", config.MaxCalls)
 
 	tuiConfig := codex.Config{
@@ -380,7 +391,12 @@ func runWithMonitor(ctx context.Context, controller *loop.Controller, config loo
 		ResetCircuit: false,
 	}
 
-	program := tui.NewProgram(tuiConfig, controller)
+	var program *tui.Program
+	if len(explicitMode) > 0 && explicitMode[0] != "" {
+		program = tui.NewProgram(tuiConfig, controller, explicitMode[0])
+	} else {
+		program = tui.NewProgram(tuiConfig, controller)
+	}
 	if err := program.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running TUI: %v\n", err)
 		os.Exit(1)

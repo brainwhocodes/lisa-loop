@@ -14,234 +14,293 @@ const (
 
 // Spinner frame constants
 var (
-	// Simple arrow spinner for task progress
-	SpinnerFrames = []string{">", ">>", ">>>", ">>", ">"}
-
-	// Braille spinner for status bar
+	// Braille spinner for status bar and active tasks
 	BrailleSpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 )
 
 // Border styles
 var (
-	// Border styles for boxes
 	BorderNormal  = lipgloss.NormalBorder()
 	BorderRounded = lipgloss.RoundedBorder()
-	BorderDouble  = lipgloss.DoubleBorder()
-	BorderThick   = lipgloss.ThickBorder()
 
-	// Box styles
+	// Subtle box style with Charmtone colors
 	StyleBox = lipgloss.NewStyle().
 			Border(BorderNormal, true, true, true, true).
-			BorderForeground(ColorSecondary).
+			BorderForeground(Charcoal).
 			Padding(1)
 
 	StyleBoxRounded = lipgloss.NewStyle().
 			Border(BorderRounded, true, true, true, true).
-			BorderForeground(ColorSecondary).
+			BorderForeground(Charcoal).
 			Padding(1)
 
 	StyleBoxError = lipgloss.NewStyle().
 			Border(BorderNormal, true, true, true, true).
-			BorderForeground(ColorError).
+			BorderForeground(Sriracha).
 			Padding(1)
 )
 
-// Divider styles
+// Divider styles - subtle horizontal lines
 var (
 	StyleDivider = lipgloss.NewStyle().
-			Foreground(ColorSecondary).
-			Width(60)
+			Foreground(Charcoal)
 
 	DividerChar = "─"
 
-	StyleDividerThick = lipgloss.NewStyle().
-				Foreground(ColorSecondary).
-				Width(60)
+	StyleDividerSubtle = lipgloss.NewStyle().
+				Foreground(Iron)
 
-	DividerCharThick = "═"
+	DividerCharSubtle = "┈"
 )
 
 // Progress bar styles
 var (
 	StyleProgressEmpty = lipgloss.NewStyle().
-				Foreground(TextMuted)
+				Foreground(Oyster)
 
 	StyleProgressFilled = lipgloss.NewStyle().
-				Foreground(ColorAccent)
-
-	StyleProgressFull = lipgloss.NewStyle().
-				Foreground(ColorAccent)
+				Foreground(Guac)
 
 	StyleProgressBar = lipgloss.NewStyle().
-				Foreground(ColorAccent)
+				Foreground(Guac)
 )
 
 // Circuit breaker styles
 var (
 	StyleCircuitClosed = lipgloss.NewStyle().
-				Foreground(ColorAccent).
+				Foreground(Guac).
 				Bold(true)
 
 	StyleCircuitHalfOpen = lipgloss.NewStyle().
-				Foreground(ColorWarning).
+				Foreground(Zest).
 				Bold(true)
 
 	StyleCircuitOpen = lipgloss.NewStyle().
-				Foreground(ColorError).
+				Foreground(Sriracha).
 				Bold(true)
 )
 
 // Error panel styles
 var (
 	StyleErrorPanel = lipgloss.NewStyle().
-			Foreground(TextPrimary).
-			Background(ColorError).
-			Padding(1, 2).
-			Width(60)
+			Foreground(Salt).
+			Background(Sriracha).
+			Padding(1, 2)
 
 	StyleErrorTitle = lipgloss.NewStyle().
-			Foreground(TextPrimary).
+			Foreground(Salt).
 			Bold(true).
 			Underline(true)
 
 	StyleErrorStack = lipgloss.NewStyle().
-			Foreground(TextSecondary).
+			Foreground(Smoke).
 			Italic(true)
-
-	StyleRetryButton = lipgloss.NewStyle().
-				Foreground(TextPrimary).
-				Background(ColorAccent).
-				Bold(true).
-				Padding(0, 2)
-)
-
-// Collapsible section styles
-var (
-	StyleCollapsedHeader = lipgloss.NewStyle().
-				Foreground(ColorSecondary).
-				Bold(true)
-
-	StyleExpandedHeader = lipgloss.NewStyle().
-				Foreground(ColorAccent).
-				Bold(true)
-
-	StyleSectionContent = lipgloss.NewStyle().
-				Foreground(TextSecondary).
-				Padding(0, 2)
 )
 
 // Spinner styles
 var (
 	StyleSpinner = lipgloss.NewStyle().
-		Foreground(ColorAccent)
+			Foreground(Guac)
+
+	StyleSpinnerActive = lipgloss.NewStyle().
+				Foreground(Julep)
 )
 
-// Color scheme for TUI
+// Header styles - Crush-inspired
 var (
-	// Primary colors
-	ColorPrimary   = lipgloss.Color("#7D56F4") // Purple
-	ColorSecondary = lipgloss.Color("#3B82F6") // Blue
-	ColorAccent    = lipgloss.Color("#10B981") // Green
-	ColorWarning   = lipgloss.Color("#F59E0B") // Amber
-	ColorError     = lipgloss.Color("#EF4444") // Red
-
-	// Background colors
-	BgPrimary   = lipgloss.Color("#1F2937") // Dark gray
-	BgSecondary = lipgloss.Color("#374151") // Lighter gray
-	BgHighlight = lipgloss.Color("#4B5563") // Highlight gray
-
-	// Text colors
-	TextPrimary   = lipgloss.Color("#F9FAFB") // White
-	TextSecondary = lipgloss.Color("#D1D5DB") // Light gray
-	TextMuted     = lipgloss.Color("#9CA3AF") // Muted gray
-)
-
-// Styles
-var (
-	// Header style
+	// Main header with brand gradient
 	StyleHeader = lipgloss.NewStyle().
-			Foreground(TextPrimary).
-			Background(ColorPrimary).
-			Bold(true).
-			Padding(1, 2).
-			Width(60)
+			Foreground(Salt).
+			Background(BBQ).
+			Padding(0, 1)
 
-	// Status bar
+	// Brand text "Charm" style
+	StyleBrandPrefix = lipgloss.NewStyle().
+				Foreground(Dolly).
+				Bold(false)
+
+	// Brand name "RALPH" in gradient
+	StyleBrandName = lipgloss.NewStyle().
+			Foreground(Charple).
+			Bold(true)
+
+	// Diagonal separator
+	StyleDiagonal = lipgloss.NewStyle().
+			Foreground(Charple)
+
+	// Header metadata (right side)
+	StyleHeaderMeta = lipgloss.NewStyle().
+			Foreground(Squid)
+
+	// Dot separator for metadata
+	MetaDotSeparator = " • "
+)
+
+// Status bar styles
+var (
 	StyleStatus = lipgloss.NewStyle().
-			Foreground(TextPrimary).
-			Background(BgSecondary).
-			Padding(0, 2)
+			Foreground(Ash).
+			Background(Pepper).
+			Padding(0, 1)
 
 	// Status badges
 	StyleStatusInitializing = lipgloss.NewStyle().
-				Foreground(TextPrimary).
-				Background(ColorSecondary).
+				Foreground(Pepper).
+				Background(Malibu).
 				Padding(0, 1).
 				Bold(true)
 
 	StyleStatusRunning = lipgloss.NewStyle().
-				Foreground(TextPrimary).
-				Background(ColorAccent).
+				Foreground(Pepper).
+				Background(Guac).
 				Padding(0, 1).
 				Bold(true)
 
 	StyleStatusPaused = lipgloss.NewStyle().
-				Foreground(TextPrimary).
-				Background(ColorWarning).
+				Foreground(Pepper).
+				Background(Zest).
 				Padding(0, 1).
 				Bold(true)
 
 	StyleStatusError = lipgloss.NewStyle().
-				Foreground(TextPrimary).
-				Background(ColorError).
+				Foreground(Salt).
+				Background(Sriracha).
 				Padding(0, 1).
 				Bold(true)
 
 	StyleStatusComplete = lipgloss.NewStyle().
-				Foreground(TextPrimary).
-				Background(ColorPrimary).
+				Foreground(Pepper).
+				Background(Charple).
 				Padding(0, 1).
 				Bold(true)
+)
 
-	// Log viewer
-	StyleLog = lipgloss.NewStyle().
-			Foreground(TextSecondary).
-			Background(BgSecondary).
-			Padding(1, 2).
-			Width(60).
-			Height(15)
+// Task/Todo styles - Crush icons
+var (
+	// Completed task: green checkmark
+	StyleTaskCompleted = lipgloss.NewStyle().
+				Foreground(Guac)
 
-	// Help text
-	StyleHelpKey = lipgloss.NewStyle().
-			Foreground(ColorAccent).
-			Bold(true)
+	// In-progress task: darker green dot with spinner
+	StyleTaskInProgress = lipgloss.NewStyle().
+				Foreground(Julep)
 
-	StyleHelpDesc = lipgloss.NewStyle().
-			Foreground(TextMuted)
+	// Pending task: muted bullet
+	StyleTaskPending = lipgloss.NewStyle().
+				Foreground(Squid)
 
-	// Error message style
-	StyleErrorMsg = lipgloss.NewStyle().
-			Foreground(ColorError).
-			Bold(true)
+	// Task text styles
+	StyleTaskTextCompleted = lipgloss.NewStyle().
+				Foreground(Smoke)
 
-	// Info message style
+	StyleTaskTextActive = lipgloss.NewStyle().
+				Foreground(Salt)
+
+	StyleTaskTextPending = lipgloss.NewStyle().
+				Foreground(Squid)
+)
+
+// Text styles
+var (
+	// Primary text
+	StyleTextBase = lipgloss.NewStyle().
+			Foreground(Ash)
+
+	// Selected/highlighted text
+	StyleTextSelected = lipgloss.NewStyle().
+				Foreground(Salt)
+
+	// Muted/secondary text
+	StyleTextMuted = lipgloss.NewStyle().
+			Foreground(Squid)
+
+	// Subtle/hint text
+	StyleTextSubtle = lipgloss.NewStyle().
+			Foreground(Oyster)
+
+	// Info message
 	StyleInfoMsg = lipgloss.NewStyle().
-			Foreground(ColorSecondary).
+			Foreground(Malibu).
+			Bold(true)
+
+	// Error message
+	StyleErrorMsg = lipgloss.NewStyle().
+			Foreground(Sriracha).
+			Bold(true)
+
+	// Success message
+	StyleSuccessMsg = lipgloss.NewStyle().
+			Foreground(Guac).
+			Bold(true)
+
+	// Warning message
+	StyleWarningMsg = lipgloss.NewStyle().
+			Foreground(Zest).
 			Bold(true)
 )
 
-// StyledLogEntry returns a styled log entry with emoji prefix
+// Footer/help styles
+var (
+	StyleHelpKey = lipgloss.NewStyle().
+			Foreground(Charple).
+			Bold(true)
+
+	StyleHelpDesc = lipgloss.NewStyle().
+			Foreground(Squid)
+
+	StyleFooter = lipgloss.NewStyle().
+			Foreground(Squid).
+			Background(Pepper).
+			Padding(0, 1)
+)
+
+// Pane styles
+var (
+	StylePane = lipgloss.NewStyle().
+			Background(Pepper)
+
+	StylePaneHeader = lipgloss.NewStyle().
+			Foreground(Ash).
+			Bold(true)
+
+	StylePaneContent = lipgloss.NewStyle().
+			Foreground(Smoke)
+)
+
+// Reasoning/thinking styles
+var (
+	StyleReasoning = lipgloss.NewStyle().
+			Foreground(Squid).
+			Italic(true)
+
+	StyleReasoningHeader = lipgloss.NewStyle().
+				Foreground(Oyster).
+				Italic(true)
+)
+
+// StyledLogEntry returns a styled log entry with Crush-style icons
 func StyledLogEntry(level, message string) string {
 	switch level {
 	case LogLevelInfo:
-		return StyleHelpDesc.Render("ℹ️  " + message)
+		return StyleTextMuted.Render(IconInfo + " " + message)
 	case LogLevelWarn:
-		return StyleCircuitHalfOpen.Render("⚠️  " + message)
+		return StyleWarningMsg.Render(IconWarning + " " + message)
 	case LogLevelError:
-		return StyleErrorMsg.Render("❌ " + message)
+		return StyleErrorMsg.Render(IconError + " " + message)
 	case LogLevelSuccess:
-		return StyleCircuitClosed.Render("✅ " + message)
+		return StyleSuccessMsg.Render(IconCheck + " " + message)
 	default:
-		return StyleHelpDesc.Render("   " + message)
+		return StyleTextMuted.Render("  " + message)
 	}
+}
+
+// FormatTaskIcon returns the appropriate icon and style for a task state
+func FormatTaskIcon(completed, active bool, spinnerFrame string) string {
+	if completed {
+		return StyleTaskCompleted.Render(IconCheck)
+	}
+	if active {
+		return StyleTaskInProgress.Render(spinnerFrame)
+	}
+	return StyleTaskPending.Render(IconPending)
 }

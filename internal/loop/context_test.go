@@ -101,8 +101,11 @@ func TestGetPrompt(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	promptContent := "Test prompt content"
+	// Create fix mode files (PROMPT.md + @fix_plan.md)
 	promptPath := filepath.Join(tmpDir, "PROMPT.md")
+	fixPlanPath := filepath.Join(tmpDir, "@fix_plan.md")
 	os.WriteFile(promptPath, []byte(promptContent), 0644)
+	os.WriteFile(fixPlanPath, []byte("- [ ] Task 1"), 0644)
 
 	origDir, _ := os.Getwd()
 	os.Chdir(tmpDir)
@@ -117,6 +120,56 @@ func TestGetPrompt(t *testing.T) {
 	if prompt != promptContent {
 		t.Errorf("GetPrompt() content mismatch")
 	}
+}
+
+func TestDetectProjectMode(t *testing.T) {
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+
+	t.Run("implementation mode", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		os.Chdir(tmpDir)
+		os.WriteFile("PRD.md", []byte("PRD"), 0644)
+		os.WriteFile("IMPLEMENTATION_PLAN.md", []byte("Plan"), 0644)
+
+		mode := DetectProjectMode()
+		if mode != ModeImplement {
+			t.Errorf("DetectProjectMode() = %v, want %v", mode, ModeImplement)
+		}
+	})
+
+	t.Run("refactor mode", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		os.Chdir(tmpDir)
+		os.WriteFile("REFACTOR_PLAN.md", []byte("Refactor"), 0644)
+
+		mode := DetectProjectMode()
+		if mode != ModeRefactor {
+			t.Errorf("DetectProjectMode() = %v, want %v", mode, ModeRefactor)
+		}
+	})
+
+	t.Run("fix mode", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		os.Chdir(tmpDir)
+		os.WriteFile("PROMPT.md", []byte("Prompt"), 0644)
+		os.WriteFile("@fix_plan.md", []byte("Fix"), 0644)
+
+		mode := DetectProjectMode()
+		if mode != ModeFix {
+			t.Errorf("DetectProjectMode() = %v, want %v", mode, ModeFix)
+		}
+	})
+
+	t.Run("unknown mode", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		os.Chdir(tmpDir)
+
+		mode := DetectProjectMode()
+		if mode != ModeUnknown {
+			t.Errorf("DetectProjectMode() = %v, want %v", mode, ModeUnknown)
+		}
+	})
 }
 
 func TestGetProjectRoot(t *testing.T) {
