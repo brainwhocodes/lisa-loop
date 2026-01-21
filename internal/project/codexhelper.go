@@ -112,6 +112,7 @@ func RunCodex(opts CodexOptions) (*CodexResult, error) {
 
 	var rawOutput strings.Builder
 	var content strings.Builder
+	progressChars := 0 // Track characters for progress indicator
 
 	// Use large buffer for scanner to handle big JSONL lines
 	const maxScannerBuffer = 1024 * 1024 // 1MB
@@ -145,15 +146,24 @@ func RunCodex(opts CodexOptions) (*CodexResult, error) {
 
 		switch parsed.Type {
 		case "reasoning":
-			if opts.StreamToTTY && parsed.Text != "" {
-				// Show reasoning with dimmed style
+			if opts.StreamToTTY && !opts.RenderMarkdown && parsed.Text != "" {
+				// Show reasoning with dimmed style (only when not rendering markdown)
 				fmt.Printf("\033[2m%s\033[0m", parsed.Text)
 			}
 		case "message", "delta":
 			if parsed.Text != "" {
-				if opts.StreamToTTY && !opts.RenderMarkdown {
-					// Stream raw text if not rendering markdown
-					fmt.Print(parsed.Text)
+				if opts.StreamToTTY {
+					if opts.RenderMarkdown {
+						// Show progress dots when rendering markdown (every 100 chars)
+						progressChars += len(parsed.Text)
+						if progressChars >= 100 {
+							fmt.Print(".")
+							progressChars = 0
+						}
+					} else {
+						// Stream raw text
+						fmt.Print(parsed.Text)
+					}
 				}
 				content.WriteString(parsed.Text)
 			}
