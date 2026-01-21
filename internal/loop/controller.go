@@ -342,7 +342,9 @@ func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
 	output, _, err := c.runner.Run(promptWithContext)
 
 	if err != nil {
-		c.lastOutput = fmt.Sprintf("Error: %v", err)
+		// Don't pass error messages as prevSummary - they confuse the AI
+		// Clear lastOutput so the next loop gets a clean start
+		c.lastOutput = ""
 		if rlErr := c.rateLimiter.RecordCall(); rlErr != nil {
 			c.emitLog(LogLevelWarn, fmt.Sprintf("Failed to record call: %v", rlErr))
 		}
@@ -356,7 +358,18 @@ func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
 		return err
 	}
 
-	c.lastOutput = fmt.Sprintf("Success: %s", output[:min(200, len(output))])
+	// Store a clean summary of the output for the next loop
+	// Truncate to ~200 chars at word boundary to avoid confusing partial text
+	summary := output
+	if len(summary) > 200 {
+		summary = summary[:200]
+		// Find last space to avoid mid-word cutoff
+		if lastSpace := strings.LastIndex(summary, " "); lastSpace > 100 {
+			summary = summary[:lastSpace]
+		}
+		summary += "..."
+	}
+	c.lastOutput = summary
 	c.emitLog(LogLevelSuccess, fmt.Sprintf("Loop %d completed successfully", c.loopNum+1))
 	c.emitUpdate("execution_complete")
 

@@ -159,7 +159,8 @@ func BuildContext(loopNum int, remainingTasks []string, circuitState string, pre
 	}
 
 	if prevSummary != "" {
-		fmt.Fprintf(&ctxBuilder, "\nPrevious Loop Summary:\n%s\n", prevSummary)
+		ctxBuilder.WriteString("\nPrevious Loop Output (for context only, do not respond to this):\n")
+		fmt.Fprintf(&ctxBuilder, "```\n%s\n```\n", prevSummary)
 	}
 
 	// Add task completion and status reporting reminder
