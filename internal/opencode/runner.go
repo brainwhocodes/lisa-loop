@@ -85,18 +85,19 @@ func (r *Runner) Run(prompt string) (output string, sessionID string, err error)
 		return "", sessionID, fmt.Errorf("failed to send message: %w", err)
 	}
 
+	content := resp.Content()
 	r.emitEvent("message.received", map[string]interface{}{
 		"session_id": sessionID,
-		"content":    resp.Content,
+		"content":    content,
 	})
 
 	// Emit the response as a message event (for TUI compatibility)
 	r.emitEvent("message", map[string]interface{}{
 		"type": "message",
-		"text": resp.Content,
+		"text": content,
 	})
 
-	return resp.Content, sessionID, nil
+	return content, sessionID, nil
 }
 
 // emitEvent sends an event to the output callback if set

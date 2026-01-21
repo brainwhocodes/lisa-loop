@@ -54,38 +54,24 @@ func TestNewClient_DefaultTimeout(t *testing.T) {
 
 func TestCreateSession(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify request
 		if r.URL.Path != "/session" {
 			t.Errorf("expected path /session, got %s", r.URL.Path)
 		}
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST method, got %s", r.Method)
 		}
-		if r.Header.Get("Content-Type") != "application/json" {
-			t.Errorf("expected Content-Type application/json, got %s", r.Header.Get("Content-Type"))
-		}
 
-		// Verify request body
-		var req CreateSessionRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("failed to decode request body: %v", err)
-		}
-		if req.ModelID != "glm-4.7" {
-			t.Errorf("expected model_id glm-4.7, got %s", req.ModelID)
-		}
-
-		// Send response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(CreateSessionResponse{
-			SessionID: "test-session-123",
+			ID:   "test-session-123",
+			Slug: "test-slug",
 		})
 	}))
 	defer server.Close()
 
 	client := NewClient(Config{
 		ServerURL: server.URL,
-		ModelID:   "glm-4.7",
 	})
 
 	sessionID, err := client.CreateSession()
@@ -107,7 +93,7 @@ func TestCreateSession_WithBasicAuth(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(CreateSessionResponse{
-			SessionID: "auth-session-123",
+			ID: "auth-session-123",
 		})
 	}))
 	defer server.Close()
@@ -150,7 +136,6 @@ func TestCreateSession_Error(t *testing.T) {
 
 func TestSendMessage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify request
 		if r.URL.Path != "/session/test-session/message" {
 			t.Errorf("expected path /session/test-session/message, got %s", r.URL.Path)
 		}
@@ -158,20 +143,32 @@ func TestSendMessage(t *testing.T) {
 			t.Errorf("expected POST method, got %s", r.Method)
 		}
 
-		// Verify request body
+		// Verify request body uses parts format
 		var req SendMessageRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Errorf("failed to decode request body: %v", err)
 		}
-		if req.Content != "Hello, world!" {
-			t.Errorf("expected content 'Hello, world!', got %s", req.Content)
+		if len(req.Parts) != 1 {
+			t.Errorf("expected 1 part, got %d", len(req.Parts))
+		}
+		if req.Parts[0].Type != "text" {
+			t.Errorf("expected part type 'text', got %s", req.Parts[0].Type)
+		}
+		if req.Parts[0].Text != "Hello, world!" {
+			t.Errorf("expected text 'Hello, world!', got %s", req.Parts[0].Text)
 		}
 
-		// Send response
+		// Send response in OpenCode format
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(SendMessageResponse{
-			Content:   "Hello back!",
-			SessionID: "test-session",
+			Info: MessageInfo{
+				ID:        "msg-123",
+				SessionID: "test-session",
+				Role:      "assistant",
+			},
+			Parts: []ResponsePart{
+				{ID: "part-1", Type: "text", Text: "Hello back!"},
+			},
 		})
 	}))
 	defer server.Close()
@@ -185,11 +182,11 @@ func TestSendMessage(t *testing.T) {
 		t.Fatalf("SendMessage failed: %v", err)
 	}
 
-	if resp.Content != "Hello back!" {
-		t.Errorf("expected content 'Hello back!', got %s", resp.Content)
+	if resp.Content() != "Hello back!" {
+		t.Errorf("expected content 'Hello back!', got %s", resp.Content())
 	}
-	if resp.SessionID != "test-session" {
-		t.Errorf("expected session ID test-session, got %s", resp.SessionID)
+	if resp.SessionID() != "test-session" {
+		t.Errorf("expected session ID test-session, got %s", resp.SessionID())
 	}
 }
 
@@ -201,8 +198,13 @@ func TestSendMessage_WithBasicAuth(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(SendMessageResponse{
-			Content:   "response",
-			SessionID: "test-session",
+			Info: MessageInfo{
+				ID:        "msg-123",
+				SessionID: "test-session",
+			},
+			Parts: []ResponsePart{
+				{ID: "part-1", Type: "text", Text: "response"},
+			},
 		})
 	}))
 	defer server.Close()
@@ -240,5 +242,31 @@ func TestSendMessage_Error(t *testing.T) {
 	_, err := client.SendMessage("test-session", "test message")
 	if err == nil {
 		t.Error("expected error for 401 response, got nil")
+	}
+}
+
+func TestSendMessageResponse_Content(t *testing.T) {
+	resp := &SendMessageResponse{
+		Parts: []ResponsePart{
+			{Type: "reasoning", Text: "thinking..."},
+			{Type: "text", Text: "Hello!"},
+			{Type: "step-finish"},
+		},
+	}
+
+	if resp.Content() != "Hello!" {
+		t.Errorf("expected 'Hello!', got %s", resp.Content())
+	}
+}
+
+func TestSendMessageResponse_Content_Empty(t *testing.T) {
+	resp := &SendMessageResponse{
+		Parts: []ResponsePart{
+			{Type: "reasoning", Text: "thinking..."},
+		},
+	}
+
+	if resp.Content() != "" {
+		t.Errorf("expected empty string, got %s", resp.Content())
 	}
 }

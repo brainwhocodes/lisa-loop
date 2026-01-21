@@ -53,19 +53,58 @@ type CreateSessionRequest struct {
 
 // CreateSessionResponse is the response from creating a new session
 type CreateSessionResponse struct {
-	SessionID string `json:"session_id"`
+	ID   string `json:"id"`
+	Slug string `json:"slug"`
+}
+
+// MessagePart represents a part of a message
+type MessagePart struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
 }
 
 // SendMessageRequest is the request body for sending a message
 type SendMessageRequest struct {
-	Content string `json:"content"`
-	ModelID string `json:"model_id,omitempty"`
+	Parts   []MessagePart `json:"parts"`
+	ModelID string        `json:"model_id,omitempty"`
+}
+
+// ResponsePart represents a part of the response message
+type ResponsePart struct {
+	ID        string `json:"id"`
+	Type      string `json:"type"`
+	Text      string `json:"text,omitempty"`
+	SessionID string `json:"sessionID"`
+	MessageID string `json:"messageID"`
+}
+
+// MessageInfo contains metadata about the response message
+type MessageInfo struct {
+	ID        string `json:"id"`
+	SessionID string `json:"sessionID"`
+	Role      string `json:"role"`
+	ModelID   string `json:"modelID"`
 }
 
 // SendMessageResponse is the response from sending a message
 type SendMessageResponse struct {
-	Content   string `json:"content"`
-	SessionID string `json:"session_id"`
+	Info  MessageInfo    `json:"info"`
+	Parts []ResponsePart `json:"parts"`
+}
+
+// Content extracts the text content from the response parts
+func (r *SendMessageResponse) Content() string {
+	for _, part := range r.Parts {
+		if part.Type == "text" && part.Text != "" {
+			return part.Text
+		}
+	}
+	return ""
+}
+
+// SessionID returns the session ID from the response
+func (r *SendMessageResponse) SessionID() string {
+	return r.Info.SessionID
 }
 
 // CreateSession creates a new OpenCode session
@@ -104,7 +143,7 @@ func (c *Client) CreateSession() (string, error) {
 		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return result.SessionID, nil
+	return result.ID, nil
 }
 
 // SendMessage sends a message to an existing session
@@ -112,8 +151,9 @@ func (c *Client) SendMessage(sessionID, content string) (*SendMessageResponse, e
 	url := fmt.Sprintf("%s/session/%s/message", c.serverURL, sessionID)
 
 	reqBody := SendMessageRequest{
-		Content: content,
-		ModelID: c.modelID,
+		Parts: []MessagePart{
+			{Type: "text", Text: content},
+		},
 	}
 
 	body, err := json.Marshal(reqBody)

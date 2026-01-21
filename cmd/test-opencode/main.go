@@ -30,9 +30,7 @@ func main() {
 	}
 
 	password := os.Getenv("OPENCODE_SERVER_PASSWORD")
-	if password == "" {
-		logger.Fatal("OPENCODE_SERVER_PASSWORD is required")
-	}
+	// Password is optional - server may be unsecured
 
 	username := os.Getenv("OPENCODE_SERVER_USERNAME")
 	if username == "" {
@@ -79,10 +77,10 @@ func main() {
 		logger.Fatal("Failed to send message", "error", err)
 	}
 	logger.Info("Test 2: Response received",
-		"content_length", len(resp.Content),
-		"session_id", resp.SessionID,
+		"content_length", len(resp.Content()),
+		"session_id", resp.SessionID(),
 	)
-	logger.Debug("Response content", "content", resp.Content)
+	logger.Debug("Response content", "content", resp.Content())
 
 	// Test 3: Test runner with output callback
 	logger.Info("Test 3: Testing runner...")
