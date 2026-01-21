@@ -12,7 +12,8 @@ const (
 	EventTypeCodexOutput    EventType = "codex_output"
 	EventTypeCodexReasoning EventType = "codex_reasoning"
 	EventTypeCodexTool      EventType = "codex_tool"
-	EventTypeAnalysis       EventType = "analysis" // RALPH_STATUS analysis results
+	EventTypeAnalysis       EventType = "analysis"      // RALPH_STATUS analysis results
+	EventTypeContextUsage   EventType = "context_usage" // Context window usage tracking
 )
 
 // LogLevel represents the severity level of a log entry
@@ -20,6 +21,7 @@ type LogLevel string
 
 // Log levels used throughout the loop controller
 const (
+	LogLevelDebug   LogLevel = "DEBUG"
 	LogLevelInfo    LogLevel = "INFO"
 	LogLevelWarn    LogLevel = "WARN"
 	LogLevelError   LogLevel = "ERROR"

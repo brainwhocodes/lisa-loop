@@ -9,32 +9,35 @@ import (
 	"github.com/brainwhocodes/ralph-codex/internal/project"
 )
 
-// LoadFixPlan loads remaining tasks from plan files in order of preference:
-// 1. IMPLEMENTATION_PLAN.md (implementation mode)
-// 2. REFACTOR_PLAN.md (refactor mode)
-// 3. @fix_plan.md (fix mode)
+// LoadFixPlan loads remaining tasks from the plan file based on detected project mode
 func LoadFixPlan() ([]string, error) {
-	// Try plan files in order of preference
-	planFiles := []string{
-		"IMPLEMENTATION_PLAN.md",
-		"REFACTOR_PLAN.md",
-		"@fix_plan.md",
-	}
+	// Detect mode and get the appropriate plan file
+	mode := DetectProjectMode()
+	planFile := GetPlanFileForMode(mode)
 
-	var data []byte
-	var err error
-	var planFile string
+	if planFile == "" {
+		// Fallback: try plan files in order of preference
+		planFiles := []string{
+			"REFACTOR_PLAN.md",
+			"IMPLEMENTATION_PLAN.md",
+			"@fix_plan.md",
+		}
 
-	for _, pf := range planFiles {
-		data, err = os.ReadFile(pf)
-		if err == nil {
-			planFile = pf
-			break
+		for _, pf := range planFiles {
+			if _, err := os.Stat(pf); err == nil {
+				planFile = pf
+				break
+			}
 		}
 	}
 
 	if planFile == "" {
-		return nil, fmt.Errorf("failed to read plan file (tried %s)", strings.Join(planFiles, ", "))
+		return nil, fmt.Errorf("failed to find plan file - need REFACTOR_PLAN.md, IMPLEMENTATION_PLAN.md, or @fix_plan.md")
+	}
+
+	data, err := os.ReadFile(planFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read plan file %s: %w", planFile, err)
 	}
 
 	return parseTasksFromPlan(string(data), planFile)

@@ -42,6 +42,13 @@ type LoopEvent struct {
 	TestsStatus        string  // PASSING, FAILING, UNKNOWN
 	ExitSignal         bool    // Whether exit was signaled
 	ConfidenceScore    float64 // Confidence in completion (0-1)
+
+	// Context tracking fields
+	ContextUsagePercent  float64 // Current context window usage (0-1)
+	ContextTotalTokens   int     // Total tokens used
+	ContextLimit         int     // Context window limit
+	ContextThreshold     bool    // True if threshold reached
+	ContextWasCompacted  bool    // True if OpenCode compacted the session
 }
 
 // EventCallback is called when the controller has an update
@@ -180,6 +187,19 @@ func (c *Controller) emitAnalysis(result *analysis.Analysis) {
 	c.emit(event)
 }
 
+// emitContextUsage sends context window usage event
+func (c *Controller) emitContextUsage(usagePercent float64, totalTokens, limit int, thresholdReached, wasCompacted bool) {
+	c.emit(LoopEvent{
+		Type:                 EventTypeContextUsage,
+		LoopNumber:           c.loopNum,
+		ContextUsagePercent:  usagePercent,
+		ContextTotalTokens:   totalTokens,
+		ContextLimit:         limit,
+		ContextThreshold:     thresholdReached,
+		ContextWasCompacted:  wasCompacted,
+	})
+}
+
 // Pause pauses the loop
 func (c *Controller) Pause() {
 	c.paused = true
@@ -234,7 +254,11 @@ func (c *Controller) Run(ctx stdcontext.Context) error {
 			if err != nil {
 				c.emitLog(LogLevelError, fmt.Sprintf("Loop iteration error: %v", err))
 				c.emitUpdate("error")
-				return err
+				// Don't return on error - start a new loop iteration instead
+				// This handles message.error and other transient failures
+				c.emitLog(LogLevelInfo, "Starting new loop iteration after error...")
+				c.loopNum++
+				continue
 			}
 
 			// Check if we should stop
@@ -425,6 +449,13 @@ func (c *Controller) GracefulExit() error {
 
 	c.shouldStop = true
 
+	// Stop the runner (shuts down managed servers if any)
+	if c.runner != nil {
+		if err := c.runner.Stop(); err != nil {
+			fmt.Printf("Warning: failed to stop runner: %v\n", err)
+		}
+	}
+
 	// Reset circuit breaker
 	c.breaker.Reset()
 
@@ -451,9 +482,31 @@ func (c *Controller) GetStats() map[string]interface{} {
 // handleCodexEvent processes streaming events from codex and emits them to TUI
 // Uses the unified event parser from the codex package
 func (c *Controller) handleCodexEvent(event codex.Event) {
+	// Debug: log raw event type
+	eventType, _ := event["type"].(string)
+	if eventType != "" {
+		c.emitLog(LogLevelDebug, fmt.Sprintf("SSE event: %s", eventType))
+	}
+
+	// Handle context usage events directly (not parsed by codex parser)
+	if eventType == "context.usage" {
+		usagePercent, _ := event["usage_percent"].(float64)
+		totalTokens, _ := event["total_tokens"].(float64)
+		limit, _ := event["context_limit"].(float64)
+		thresholdReached, _ := event["threshold_reached"].(bool)
+		wasCompacted, _ := event["was_compacted"].(bool)
+		c.emitContextUsage(usagePercent, int(totalTokens), int(limit), thresholdReached, wasCompacted)
+		return
+	}
+
 	parsed := codex.ParseEvent(event)
 	if parsed == nil {
 		return
+	}
+
+	// Debug: log parsed type
+	if parsed.Text != "" || parsed.ToolName != "" {
+		c.emitLog(LogLevelDebug, fmt.Sprintf("Parsed: type=%s text=%d chars", parsed.Type, len(parsed.Text)))
 	}
 
 	// Emit based on parsed event type
