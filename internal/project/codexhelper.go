@@ -143,8 +143,9 @@ func RunCodex(opts CodexOptions) (*CodexResult, error) {
 
 		switch parsed.Type {
 		case "reasoning":
-			if opts.Verbose && parsed.Text != "" {
-				log.Debug(parsed.Text)
+			if opts.StreamToTTY && parsed.Text != "" {
+				// Show reasoning with dimmed style
+				fmt.Printf("\033[2m%s\033[0m", parsed.Text)
 			}
 		case "message", "delta":
 			if parsed.Text != "" {
@@ -160,8 +161,13 @@ func RunCodex(opts CodexOptions) (*CodexResult, error) {
 					Target: parsed.ToolTarget,
 					Status: parsed.ToolStatus,
 				})
-				if opts.Verbose {
-					log.Debug("Tool", "name", parsed.ToolName, "target", parsed.ToolTarget, "status", parsed.ToolStatus)
+				if opts.StreamToTTY {
+					// Show tool calls with visual indicator
+					if parsed.ToolStatus == "started" {
+						fmt.Printf("\n> %s %s...\n", parsed.ToolName, parsed.ToolTarget)
+					} else if parsed.ToolStatus == "completed" {
+						fmt.Printf("  ✓ %s\n", parsed.ToolTarget)
+					}
 				}
 			}
 		}
