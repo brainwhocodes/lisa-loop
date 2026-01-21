@@ -76,3 +76,14 @@
   - `logfmt` - Key-value pair format for log aggregation
 - Logs include: loop updates, tool calls, analysis results, and events
 - Verbose mode (`--verbose`) enables debug-level logging
+
+## Commit 6: OpenCode integration test
+
+- Created `cmd/test-opencode/main.go` - real integration test against live server
+- Tests:
+  - Session creation
+  - Message sending and response
+  - Runner execution with output callback
+  - Session persistence to `.opencode_session_id`
+  - Session resume for conversation continuity
+- Usage: `OPENCODE_SERVER_URL=... OPENCODE_SERVER_PASSWORD=... go run ./cmd/test-opencode`
