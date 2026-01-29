@@ -38,7 +38,7 @@ Run with: ./app`,
 			content: `# Development Instructions
 Build a great application.`,
 			wantPrompt:   "Build a great application.",
-			wantFixPlan:  "# Ralph Development Task List\n\n**IMPORTANT**: Mark tasks complete by changing `- [ ]` to `- [x]` as you finish them.\nWhen ALL tasks are marked [x], set EXIT_SIGNAL: true in your RALPH_STATUS block.\n\n## Phase 1: Initial Setup\n- [ ] Create project structure\n- [ ] Set up development environment\n- [ ] Write initial tests\n- [ ] Implement core features\n\n## Phase 2: Development\n- [ ] Implement feature X\n- [ ] Implement feature Y\n- [ ] Write tests for X and Y\n\n## Phase 3: Polish\n- [ ] Add documentation\n- [ ] Performance optimization\n- [ ] Code review and cleanup\n\n## Phase 4: Deployment\n- [ ] Prepare for release\n- [ ] Deploy to production\n",
+			wantFixPlan:  "# Lisa Development Task List\n\n**IMPORTANT**: Mark tasks complete by changing `- [ ]` to `- [x]` as you finish them.\nWhen ALL tasks are marked [x], set EXIT_SIGNAL: true in your RALPH_STATUS block.\n\n## Phase 1: Initial Setup\n- [ ] Create project structure\n- [ ] Set up development environment\n- [ ] Write initial tests\n- [ ] Implement core features\n\n## Phase 2: Development\n- [ ] Implement feature X\n- [ ] Implement feature Y\n- [ ] Write tests for X and Y\n\n## Phase 3: Polish\n- [ ] Add documentation\n- [ ] Performance optimization\n- [ ] Code review and cleanup\n\n## Phase 4: Deployment\n- [ ] Prepare for release\n- [ ] Deploy to production\n",
 			wantAgent:    "# Build and Run Instructions\n\n## Building the Project\n\n```bash\ngo build ./...\n```\n\n## Running Tests\n\n```bash\ngo test ./...\n```\n\n## Running the Application\n\n```bash\n./<binary-name>\n```\n\n## Development Workflow\n\n1. Make changes to source code\n2. Run tests to verify\n3. Build the project\n4. Update @fix_plan.md (mark completed tasks with [x])\n5. Commit changes\n6. **Output RALPH_STATUS block** (see PROMPT.md for format)\n\n## Completion Checklist\n\nBefore setting EXIT_SIGNAL: true, verify:\n- [ ] All tasks in @fix_plan.md are marked [x]\n- [ ] All tests pass\n- [ ] Code builds without errors\n- [ ] Changes are committed\n",
 			wantWarnings: 2,
 		},
@@ -46,7 +46,7 @@ Build a great application.`,
 			name:         "empty content",
 			content:      "",
 			wantPrompt:   "# Development Instructions\n\nPlease specify development goals and rules.",
-			wantFixPlan:  "# Ralph Development Task List\n\n**IMPORTANT**: Mark tasks complete by changing `- [ ]` to `- [x]` as you finish them.\nWhen ALL tasks are marked [x], set EXIT_SIGNAL: true in your RALPH_STATUS block.\n\n## Phase 1: Initial Setup\n- [ ] Create project structure\n- [ ] Set up development environment\n- [ ] Write initial tests\n- [ ] Implement core features\n\n## Phase 2: Development\n- [ ] Implement feature X\n- [ ] Implement feature Y\n- [ ] Write tests for X and Y\n\n## Phase 3: Polish\n- [ ] Add documentation\n- [ ] Performance optimization\n- [ ] Code review and cleanup\n\n## Phase 4: Deployment\n- [ ] Prepare for release\n- [ ] Deploy to production\n",
+			wantFixPlan:  "# Lisa Development Task List\n\n**IMPORTANT**: Mark tasks complete by changing `- [ ]` to `- [x]` as you finish them.\nWhen ALL tasks are marked [x], set EXIT_SIGNAL: true in your RALPH_STATUS block.\n\n## Phase 1: Initial Setup\n- [ ] Create project structure\n- [ ] Set up development environment\n- [ ] Write initial tests\n- [ ] Implement core features\n\n## Phase 2: Development\n- [ ] Implement feature X\n- [ ] Implement feature Y\n- [ ] Write tests for X and Y\n\n## Phase 3: Polish\n- [ ] Add documentation\n- [ ] Performance optimization\n- [ ] Code review and cleanup\n\n## Phase 4: Deployment\n- [ ] Prepare for release\n- [ ] Deploy to production\n",
 			wantAgent:    "# Build and Run Instructions\n\n## Building the Project\n\n```bash\ngo build ./...\n```\n\n## Running Tests\n\n```bash\ngo test ./...\n```\n\n## Running the Application\n\n```bash\n./<binary-name>\n```\n\n## Development Workflow\n\n1. Make changes to source code\n2. Run tests to verify\n3. Build the project\n4. Update @fix_plan.md (mark completed tasks with [x])\n5. Commit changes\n6. **Output RALPH_STATUS block** (see PROMPT.md for format)\n\n## Completion Checklist\n\nBefore setting EXIT_SIGNAL: true, verify:\n- [ ] All tasks in @fix_plan.md are marked [x]\n- [ ] All tests pass\n- [ ] Code builds without errors\n- [ ] Changes are committed\n",
 			wantWarnings: 3,
 		},
@@ -313,5 +313,70 @@ func TestAutoDetectProjectName(t *testing.T) {
 				t.Errorf("ImportPRD() auto-detected ProjectName = %v, want %v", result.ProjectName, tt.expected)
 			}
 		})
+	}
+}
+
+
+func TestParseSourceContent_RepeatedHeadings(t *testing.T) {
+	// Test that repeated headings accumulate content rather than resetting
+	// The parser uses keywords (prompt, task/plan, agent) to identify sections
+	content := `# Prompt: Project Overview
+	This is the first part.
+
+	# Additional Prompt Details
+	This is the second part under another prompt heading.
+
+	## Tasks
+	- Task 1
+	- Task 2
+
+	## More Tasks
+	- Task 3
+	- Task 4
+
+	### Agent Setup
+	Setup instructions.
+
+	### Agent Build
+	Build instructions.`
+
+	prompt, fixPlan, agent, warnings, err := parseSourceContent(content)
+	if err != nil {
+		t.Fatalf("parseSourceContent() error = %v", err)
+	}
+
+	// Prompt should contain both headings and their content (accumulated)
+	if !strings.Contains(prompt, "Project Overview") {
+		t.Error("prompt missing 'Project Overview' heading")
+	}
+	if !strings.Contains(prompt, "Additional Prompt Details") {
+		t.Error("prompt missing 'Additional Prompt Details' heading")
+	}
+	if !strings.Contains(prompt, "first part") {
+		t.Error("prompt missing 'first part' content")
+	}
+	if !strings.Contains(prompt, "second part") {
+		t.Error("prompt missing 'second part' content")
+	}
+
+	// FixPlan should contain all task items (accumulated from both task sections)
+	if !strings.Contains(fixPlan, "Task 1") {
+		t.Error("fixPlan missing 'Task 1'")
+	}
+	if !strings.Contains(fixPlan, "Task 4") {
+		t.Error("fixPlan missing 'Task 4'")
+	}
+
+	// Agent should contain both sections (accumulated)
+	if !strings.Contains(agent, "Setup") {
+		t.Error("agent missing 'Setup' section")
+	}
+	if !strings.Contains(agent, "Build") {
+		t.Error("agent missing 'Build' section")
+	}
+
+	// Should have no warnings since all sections are present
+	if len(warnings) != 0 {
+		t.Errorf("expected 0 warnings, got %d: %v", len(warnings), warnings)
 	}
 }
