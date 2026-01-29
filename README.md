@@ -1,36 +1,38 @@
-# Ralph Codex - AI Development Loop with TUI
+# Lisa Codex - AI Development Loop with TUI
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
-[![GitHub Issues](https://img.shields.io/github/issues/brainwhocodes/ralph-codex)](https://github.com/brainwhocodes/ralph-codex/issues)
+![Version](https://img.shields.io/badge/version-1.1.0-blue)
+[![GitHub Issues](https://img.shields.io/github/issues/brainwhocodes/lisa-loop)](https://github.com/brainwhocodes/lisa-loop/issues)
 
 > **Autonomous AI development loop with Charm TUI and intelligent exit detection**
 
-Ralph Codex is a modern Go implementation of Geoffrey Huntley's autonomous development technique, featuring a beautiful terminal user interface powered by Charm libraries. It enables continuous autonomous development cycles where Codex iteratively improves your project until completion, with built-in safeguards to prevent infinite loops and API overuse.
+Lisa Codex is a modern Go implementation of Geoffrey Huntley's autonomous development technique, featuring a beautiful terminal user interface powered by Charm libraries. It enables continuous autonomous development cycles where Codex iteratively improves your project until completion, with built-in safeguards to prevent infinite loops and API overuse.
 
 **Features**:
 - 🎨 **Modern TUI** - Beautiful terminal interface with real-time task progress and logs
-- 🔄 **Codex Integration** - Powered by Codex CLI
+- 🔄 **Dual Backend Support** - Codex CLI or OpenCode server backend
+- 📋 **Preflight Checks** - Validates plan status before each loop iteration
 - ⚡ **Session Continuity** - Preserve context across loop iterations
 - 🛡️ **Circuit Breaker** - Prevent runaway loops with advanced error detection
 - 📊 **Real-time Monitoring** - Live status, task checklist, and integrated logs
 - 🎯 **Intelligent Exit** - Task-based completion with automatic detection
+- ✅ **Flexible Task Formats** - Supports `- [ ]`, `* [ ]`, `1. [ ]`, and `[ ]` checklists
 
 ## Quick Start
 
-### Install Ralph
+### Install Lisa
 
 ```bash
 # Build from source
-git clone https://github.com/brainwhocodes/ralph-codex.git
-cd ralph-codex
+git clone https://github.com/brainwhocodes/lisa-loop.git
+cd lisa-loop
 make build
 make install
 ```
 
 ### Initialize a Project
 
-Ralph supports three initialization modes based on your project setup:
+Lisa supports three initialization modes based on your project setup:
 
 #### Implementation Mode (New Projects)
 
@@ -41,10 +43,10 @@ Start with a Product Requirements Document to generate an implementation plan:
 echo "# My Project\n\nBuild a CLI tool that..." > PRD.md
 
 # Initialize - generates IMPLEMENTATION_PLAN.md and AGENTS.md
-ralph init
+lisa init
 
 # Start autonomous development
-ralph --monitor
+lisa --monitor
 ```
 
 #### Fix Mode (Existing Projects)
@@ -57,10 +59,10 @@ mkdir specs
 echo "# API Spec\n\n..." > specs/api.md
 
 # Initialize - generates @fix_plan.md
-ralph init --mode fix
+lisa init --mode fix
 
 # Start autonomous development
-ralph --monitor
+lisa --monitor
 ```
 
 #### Refactor Mode (Code Refactoring)
@@ -87,42 +89,101 @@ cat > REFACTOR.md << 'EOF'
 EOF
 
 # Initialize - generates REFACTOR_PLAN.md
-ralph init --mode refactor
+lisa init --mode refactor
 
 # Start autonomous refactoring
-ralph --monitor
+lisa --monitor
 ```
 
-### Running Ralph
+### Running Lisa
 
 ```bash
 # Basic run (3 iterations)
 ralph
 
 # With TUI monitoring
-ralph --monitor
+lisa --monitor
 
 # Custom iteration limit
-ralph --monitor --calls 5
+lisa --monitor --calls 5
+
+# Use OpenCode backend
+lisa --monitor --backend opencode --opencode-url http://localhost:3000
+
+# Structured logging (JSON)
+lisa --log-format json
 
 # Verbose output
-ralph --monitor --verbose
+lisa --monitor --verbose
+```
+
+### Backend Selection
+
+Lisa supports two backends for AI execution:
+
+#### Codex CLI (Default)
+Uses the local Codex CLI for autonomous development:
+
+```bash
+# Default - uses Codex CLI
+lisa --monitor
+```
+
+**Requirements:**
+- Install Codex CLI: `npm install -g @anthropic/claude-code`
+- Authenticate with `codex auth`
+
+#### OpenCode Server
+Connect to a self-hosted or cloud OpenCode server:
+
+```bash
+# Using flags
+lisa --monitor --backend opencode --opencode-url http://localhost:3000 --opencode-pass mypassword
+
+# Using environment variables
+export OPENCODE_SERVER_URL=http://localhost:3000
+export OPENCODE_SERVER_PASSWORD=mypassword
+lisa --monitor --backend opencode
+```
+
+**Environment Variables:**
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OPENCODE_SERVER_URL` | Server URL | - |
+| `OPENCODE_SERVER_USERNAME` | Auth username | `opencode` |
+| `OPENCODE_SERVER_PASSWORD` | Auth password | - |
+| `OPENCODE_MODEL_ID` | Model ID | `glm-4.7` |
+
+### Preflight Checks
+
+Before each loop iteration, Lisa performs preflight checks:
+
+1. **Plan Status** - Verifies remaining tasks in the plan file
+2. **Circuit Breaker** - Checks if the circuit is OPEN (too many errors)
+3. **Rate Limit** - Ensures API calls haven't exceeded the limit
+4. **Max Loops** - Checks if iteration limit has been reached
+
+If any check fails, the loop skips the backend call and exits with a clear reason:
+```
+Skipped: All tasks complete
+Skipped: Circuit breaker is OPEN
+Skipped: Rate limit exhausted (0 calls remaining)
 ```
 
 ### Legacy Project Setup
 
 ```bash
 # Import existing PRD/specification
-ralph --command import --source my-requirements.md --import-name my-project
+lisa --command import --source my-requirements.md --import-name my-project
 
 # Create blank project with templates
-ralph --command setup --name my-project
+lisa --command setup --name my-project
 ```
 
 ## TUI Keybindings
 
 ### Navigation
-- `q` / `Ctrl+C` - Quit Ralph Codex
+- `q` / `Ctrl+C` / `Ctrl+Q` - Quit Lisa Codex
 - `?` - Toggle help screen
 
 ### Loop Control
@@ -131,8 +192,16 @@ ralph --command setup --name my-project
 
 ### Views
 - `l` - Toggle log view
+- `t` - Toggle tasks view
+- `o` - Toggle output view
 - `c` - Show circuit breaker status
 - `R` - Reset circuit breaker
+
+The TUI displays:
+- **Header** - Mode, loop number, task progress
+- **Status Bar** - Current state, circuit breaker status, context usage
+- **Task Panel** - Current phase tasks with completion status
+- **Output Panel** - Live agent output and reasoning
 
 ## Commands
 
@@ -141,11 +210,11 @@ ralph --command setup --name my-project
 Run the autonomous development loop.
 
 ```bash
-ralph                           # Run with defaults (3 iterations)
-ralph run                       # Explicit run command
-ralph --monitor                 # With TUI interface
-ralph --monitor --calls 5       # Custom iteration limit
-ralph --verbose                 # Verbose output
+lisa                           # Run with defaults (3 iterations)
+lisa run                       # Explicit run command
+lisa --monitor                 # With TUI interface
+lisa --monitor --calls 5       # Custom iteration limit
+lisa --verbose                 # Verbose output
 ```
 
 **Options:**
@@ -153,32 +222,38 @@ ralph --verbose                 # Verbose output
 |--------|-------------|---------|
 | `--project <path>` | Project directory | `.` |
 | `--prompt <file>` | Prompt file | `PROMPT.md` |
-| `--calls <n>` | Max loop iterations | `3` |
+| `--calls <n>` | Max loop iterations | `3` (10 for opencode) |
 | `--timeout <sec>` | Codex timeout | `600` |
 | `--monitor` | Enable TUI monitoring | `false` |
 | `--verbose` | Verbose output | `false` |
+| `--backend` | Backend: `cli` or `opencode` | `cli` |
+| `--opencode-url` | OpenCode server URL | - |
+| `--opencode-user` | OpenCode username | `opencode` |
+| `--opencode-pass` | OpenCode password | - |
+| `--opencode-model` | OpenCode model ID | `glm-4.7` |
+| `--log-format` | Log format: `text`, `json`, `logfmt` | `text` |
 
 ### init
 
-Initialize a Ralph project from PRD.md, specs/, or REFACTOR.md.
+Initialize a Lisa project from PRD.md, specs/, or REFACTOR.md.
 
 ```bash
-ralph init                        # Auto-detect mode
-ralph init --mode implementation  # Force implementation mode
-ralph init --mode fix             # Force fix mode
-ralph init --mode refactor        # Force refactor mode
-ralph init --verbose              # Verbose output
+lisa init                        # Auto-detect mode
+lisa init --mode implementation  # Force implementation mode
+lisa init --mode fix             # Force fix mode
+lisa init --mode refactor        # Force refactor mode
+lisa init --verbose              # Verbose output
 ```
 
 ### setup
 
-Create a new Ralph-managed project.
+Create a new Lisa-managed project.
 
 ```bash
-ralph setup --name my-project                    # Create new project
-ralph setup --name my-project --description "…"  # With description for Codex
-ralph setup --init                               # Initialize in current directory
-ralph setup --name my-project --git=false        # Skip git init
+lisa setup --name my-project                    # Create new project
+lisa setup --name my-project --description "…"  # With description for Codex
+lisa setup --init                               # Initialize in current directory
+lisa setup --name my-project --git=false        # Skip git init
 ```
 
 **Options:**
@@ -194,8 +269,8 @@ ralph setup --name my-project --git=false        # Skip git init
 Import a PRD or specification document.
 
 ```bash
-ralph import --source requirements.md                    # Auto-detect project name
-ralph import --source spec.md --import-name my-project   # Specify project name
+lisa import --source requirements.md                    # Auto-detect project name
+lisa import --source spec.md --import-name my-project   # Specify project name
 ```
 
 **Options:**
@@ -209,7 +284,7 @@ ralph import --source spec.md --import-name my-project   # Specify project name
 Show current project status.
 
 ```bash
-ralph status
+lisa status
 ```
 
 ### reset-circuit
@@ -217,21 +292,21 @@ ralph status
 Reset the circuit breaker state.
 
 ```bash
-ralph reset-circuit
+lisa reset-circuit
 ```
 
 ### help / version
 
 ```bash
-ralph help      # Show help
-ralph version   # Show version
+lisa help      # Show help
+lisa version   # Show version
 ```
 
 ## Skills
 
-Ralph includes Codex skills for common development tasks. Skills are bash scripts installed to `~/.codex/skills/`.
+Lisa includes Codex skills for common development tasks. Skills are bash scripts installed to `~/.codex/skills/`.
 
-### Ralph-Specific Skills
+### Lisa-Specific Skills
 
 | Skill | Description |
 |-------|-------------|
@@ -284,13 +359,16 @@ Loop execution halted - press `R` to reset
 
 ## Features
 
-- **Codex Backend** - Autonomous development loop powered by Codex CLI
-- **Task-Based Completion** - Automatically detects when all tasks in `@fix_plan.md` are complete
+- **Dual Backend Support** - Choose between Codex CLI (default) or OpenCode server backend
+- **Preflight Validation** - Checks plan status, circuit breaker, and rate limits before each iteration
+- **Task-Based Completion** - Automatically detects when all tasks are complete (supports multiple checklist formats)
 - **Session Continuity** - Preserves context across loop iterations with automatic session management
 - **Loop Management** - Built-in iteration limits with configurable max loops
 - **Live Monitoring** - Real-time dashboard showing loop status, task progress, and integrated logs
 - **Task Management** - Structured approach with prioritized task lists and progress tracking
-- **Circuit Breaker** - Advanced error detection with two-stage filtering and automatic recovery
+- **Circuit Breaker** - Advanced error detection with three states (CLOSED/HALF_OPEN/OPEN) and automatic recovery
+- **Structured Logging** - JSON and logfmt output formats for integration with logging systems
+- **Event-Driven Architecture** - Preflight and outcome events for monitoring and observability
 
 ## Building from Source
 
@@ -315,7 +393,10 @@ make lint
 
 - [docs/tui.md](docs/tui.md) - TUI documentation and keybindings
 - [docs/codex.md](docs/codex.md) - Codex integration guide
-- [CLAUDE.md](CLAUDE.md) - Development guidelines
+- [docs/opencode.md](docs/opencode.md) - OpenCode backend setup guide
+- [AGENTS.md](AGENTS.md) - Agent development guidelines
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Contributor guide
+- [TESTING.md](TESTING.md) - Testing documentation
 
 ## Project Structure
 
@@ -359,10 +440,22 @@ my-project/
 
 ## System Requirements
 
-- **Go 1.21+** - For building Ralph
+- **Go 1.21+** - For building Lisa
 - **Codex CLI** - `npm install -g @anthropic/claude-code` (for CLI backend)
+- **OR OpenCode Server** - For OpenCode backend (self-hosted or cloud)
 - **Git** - Version control
 - **Standard Unix tools** - grep, date, etc.
+
+### Backend Requirements
+
+**Codex CLI Backend:**
+- Codex CLI installed and authenticated
+- OpenAI API access
+
+**OpenCode Backend:**
+- OpenCode server URL
+- Authentication credentials
+- Compatible model (default: glm-4.7)
 
 ## Testing
 
@@ -374,6 +467,42 @@ make test-coverage # Coverage report
 make lint          # Code linting
 ```
 
+### Test Structure
+
+```
+├── internal/
+│   ├── analysis/       # Response analysis tests
+│   ├── circuit/        # Circuit breaker tests
+│   ├── codex/          # Codex integration tests
+│   ├── loop/           # Loop controller & preflight tests
+│   ├── opencode/       # OpenCode client tests
+│   ├── project/        # Project management tests
+│   ├── runner/         # Backend runner tests
+│   ├── state/          # State persistence tests
+│   └── tui/            # TUI component tests
+├── tests/
+│   ├── fixtures/       # Test fixtures for all modes
+│   │   ├── fix/
+│   │   ├── implement/
+│   │   └── refactor/
+│   └── e2e_loop_test.go # End-to-end loop tests
+```
+
+### End-to-End Tests
+
+The E2E tests verify the complete loop execution:
+
+```bash
+go test ./tests/... -v
+```
+
+Tests include:
+- **Fix Mode** - Runs loop until 3 tasks complete
+- **Implement Mode** - Runs loop until 6 tasks complete
+- **Refactor Mode** - Runs loop until 4 tasks complete
+- **Early Exit** - Verifies loop skips when all tasks already complete
+- **Event Capture** - Validates preflight and outcome events
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for complete contributor guide.
@@ -384,12 +513,12 @@ This project is licensed under MIT License - see [LICENSE](LICENSE) file for det
 
 ## Acknowledgments
 
-- Inspired by [Ralph technique](https://ghuntley.com/ralph/) created by Geoffrey Huntley
-- Powered by [Codex](https://openai.com/codex)
+- Inspired by [Lisa technique](https://ghuntley.com/ralph/) created by Geoffrey Huntley
+- Powered by [Codex](https://openai.com/codex) and [OpenCode](https://github.com/opencode-ai)
 - TUI built with [Charm libraries](https://charm.sh/) (Bubble Tea, Lipgloss)
 - Community feedback and contributions
 
 ## Related Projects
 
-- [Codex](https://openai.com/codex) - The AI coding assistant that powers Ralph
+- [Codex](https://openai.com/codex) - The AI coding assistant that powers Lisa
 - [Aider](https://github.com/paul-gauthier/aider) - AI pair programming tool
