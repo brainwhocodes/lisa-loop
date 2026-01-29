@@ -368,13 +368,13 @@ type StreamResult struct {
 	CompletionTokens int  // Token usage after message
 }
 
-// SendMessageStreaming sends a message and streams the response via SSE
-func (c *Client) SendMessageStreaming(ctx context.Context, sessionID, content string, eventCb StreamEventCallback) (*StreamResult, error) {
-	// Create a dedicated HTTP client for SSE with no timeout
+// connectToSSE attempts to connect to the SSE endpoint with fallback
+// Tries /global/event first, then falls back to /event if that fails
+func (c *Client) connectToSSE(ctx context.Context) (*http.Response, error) {
 	sseClient := &http.Client{}
 
-	// Start SSE connection
-	sseReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.serverURL+"/event", nil)
+	// Try primary endpoint: /global/event
+	sseReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.serverURL+"/global/event", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SSE request: %w", err)
 	}
@@ -386,8 +386,184 @@ func (c *Client) SendMessageStreaming(ctx context.Context, sessionID, content st
 	}
 
 	sseResp, err := sseClient.Do(sseReq)
+	if err == nil && sseResp.StatusCode == http.StatusOK {
+		return sseResp, nil
+	}
+
+	// Close failed response if we got one
+	if sseResp != nil {
+		closeBody(sseResp.Body)
+	}
+
+	// Fall back to legacy endpoint: /event
+	log.Printf("Primary SSE endpoint /global/event failed, falling back to /event")
+	sseReq, err = http.NewRequestWithContext(ctx, http.MethodGet, c.serverURL+"/event", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create fallback SSE request: %w", err)
+	}
+
+	sseReq.Header.Set("Accept", "text/event-stream")
+	sseReq.Header.Set("Cache-Control", "no-cache")
+	if c.username != "" && c.password != "" {
+		sseReq.SetBasicAuth(c.username, c.password)
+	}
+
+	sseResp, err = sseClient.Do(sseReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to SSE: %w", err)
+	}
+
+	if sseResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(sseResp.Body)
+		closeBody(sseResp.Body)
+		return nil, fmt.Errorf("SSE endpoint returned status %d: %s", sseResp.StatusCode, string(body))
+	}
+
+	return sseResp, nil
+}
+
+// AbortSession calls the abort endpoint to cancel an ongoing session
+func (c *Client) AbortSession(sessionID string) error {
+	url := fmt.Sprintf("%s/session/%s/abort", c.serverURL, sessionID)
+
+	req, err := http.NewRequest(http.MethodPost, url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create abort request: %w", err)
+	}
+
+	c.setHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to abort session: %w", err)
+	}
+	defer closeBody(resp.Body)
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("abort failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// HealthCheck performs a health check against the server
+func (c *Client) HealthCheck() error {
+	url := c.serverURL + "/global/health"
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create health check request: %w", err)
+	}
+
+	c.setHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("health check failed: %w", err)
+	}
+	defer closeBody(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("health check failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// SendMessageStreaming sends a message and streams the response via SSE
+// Falls back to synchronous message sending if streaming fails
+func (c *Client) SendMessageStreaming(ctx context.Context, sessionID, content string, eventCb StreamEventCallback) (*StreamResult, error) {
+	result, err := c.sendMessageStreamingInternal(ctx, sessionID, content, eventCb)
+	if err != nil {
+		// Check if we should fall back to sync path
+		// Don't fallback for context cancellation or explicit user aborts
+		if ctx.Err() == context.Canceled || ctx.Err() == context.DeadlineExceeded {
+			return nil, err
+		}
+
+		log.Printf("Streaming failed (%v), falling back to sync message", err)
+		return c.sendMessageSync(ctx, sessionID, content, eventCb)
+	}
+	return result, nil
+}
+
+// sendMessageSync sends a message synchronously as a fallback when streaming fails
+func (c *Client) sendMessageSync(ctx context.Context, sessionID, content string, eventCb StreamEventCallback) (*StreamResult, error) {
+	resp, err := c.SendMessage(sessionID, content)
+	if err != nil {
+		return nil, fmt.Errorf("sync message failed: %w", err)
+	}
+
+	result := &StreamResult{
+		SessionID: sessionID,
+		MessageID: resp.Info.ID,
+		Content:   resp.Content(),
+	}
+
+	// Emit synthetic events for callback compatibility
+	if eventCb != nil {
+		// Emit message.updated event
+		eventCb(SSEEvent{
+			Type: "message.updated",
+			Properties: mustMarshalJSON(map[string]interface{}{
+				"info": map[string]interface{}{
+					"id":        resp.Info.ID,
+					"sessionID": sessionID,
+					"role":      "assistant",
+				},
+			}),
+		})
+
+		// Emit message.part.updated events for each part
+		for _, part := range resp.Parts {
+			if part.Type == "text" {
+				eventCb(SSEEvent{
+					Type: "message.part.updated",
+					Properties: mustMarshalJSON(map[string]interface{}{
+						"part": map[string]interface{}{
+							"id":        part.ID,
+							"sessionID": sessionID,
+							"messageID": resp.Info.ID,
+							"type":      part.Type,
+							"text":      part.Text,
+						},
+					}),
+				})
+			}
+		}
+
+		// Emit session.status idle event to signal completion
+		eventCb(SSEEvent{
+			Type: "session.status",
+			Properties: mustMarshalJSON(map[string]interface{}{
+				"sessionID": sessionID,
+				"status": map[string]interface{}{
+					"type": "idle",
+				},
+			}),
+		})
+	}
+
+	return result, nil
+}
+
+// mustMarshalJSON marshals v to JSON, panicking on error (for internal use only)
+func mustMarshalJSON(v interface{}) json.RawMessage {
+	data, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return json.RawMessage(data)
+}
+
+// sendMessageStreamingInternal is the internal streaming implementation
+func (c *Client) sendMessageStreamingInternal(ctx context.Context, sessionID, content string, eventCb StreamEventCallback) (*StreamResult, error) {
+	// Connect to SSE with fallback
+	sseResp, err := c.connectToSSE(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	result := &StreamResult{SessionID: sessionID}
@@ -544,6 +720,10 @@ func (c *Client) SendMessageStreaming(ctx context.Context, sessionID, content st
 		return nil, err
 	case <-ctx.Done():
 		closeBody(sseResp.Body) // Close SSE to unblock reader
+		// Call abort endpoint to cleanly cancel the session
+		if abortErr := c.AbortSession(sessionID); abortErr != nil {
+			log.Printf("Warning: failed to abort session on cancellation: %v", abortErr)
+		}
 		return nil, ctx.Err()
 	}
 
