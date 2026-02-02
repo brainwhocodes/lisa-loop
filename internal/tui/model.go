@@ -9,7 +9,9 @@ import (
 
 	"github.com/brainwhocodes/lisa-loop/internal/loop"
 	"github.com/brainwhocodes/lisa-loop/internal/tui/effects"
+	"github.com/brainwhocodes/lisa-loop/internal/tui/markdown"
 	tuimsg "github.com/brainwhocodes/lisa-loop/internal/tui/msg"
+	"github.com/brainwhocodes/lisa-loop/internal/tui/transcript"
 	"github.com/brainwhocodes/lisa-loop/internal/tui/view"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -43,6 +45,10 @@ type Model struct {
 	cancel        context.CancelFunc
 	activeTaskIdx int // Index of currently active task (-1 if none)
 
+	// Presentation helpers (cached renderers / structured output)
+	md         *markdown.Renderer
+	transcript *transcript.Buffer
+
 	// Backend and output streaming
 	backend        string   // Backend name (cli or opencode)
 	outputLines    []string // Live output lines from backend
@@ -54,6 +60,9 @@ type Model struct {
 	currentReasoning string          // Current reasoning text (replace, don't append)
 	currentMessage   string          // Current message text (for cumulative update detection)
 	lastToolCall     string          // Last tool call ID to avoid duplicates
+
+	assistantMsgSeq       int
+	assistantCurrentMsgID string
 
 	// Analysis results (from RALPH_STATUS block)
 	analysisStatus  string  // WORKING, COMPLETE, BLOCKED
@@ -226,6 +235,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.WindowSizeMsg:
+		// Invalidate width-specific markdown renderer cache on resize.
+		if m.md != nil && msg.Width != m.width {
+			m.md.InvalidateWidth(msg.Width)
+		}
 		m.width = msg.Width
 		m.height = msg.Height
 		return m, nil
@@ -443,6 +456,12 @@ func (m *Model) addOutputLine(line, lineType string) {
 	// For agent messages, detect cumulative SSE updates and replace instead of append
 	// SSE sends: "I'll" → "I'll continue" → "I'll continue fixing" etc.
 	if lineType == "agent_message" || lineType == "" {
+		// Skip exact duplicate agent updates early so we don't create duplicate transcript items.
+		dupKey := lineType + ":" + line
+		if m.seenMessages[dupKey] {
+			return
+		}
+
 		// Check if this is a cumulative update (new line starts with or extends current)
 		if m.currentMessage != "" {
 			// If new line starts with current message, it's a cumulative update - replace
@@ -454,12 +473,14 @@ func (m *Model) addOutputLine(line, lineType string) {
 					if len(m.outputLines) > 0 {
 						m.outputLines[len(m.outputLines)-1] = line
 					}
+					m.upsertTranscriptAssistant(line)
 				}
 				return
 			}
 		}
 		// New message - track it
 		m.currentMessage = line
+		m.appendTranscriptAssistant(line)
 	}
 
 	// Skip exact duplicates
@@ -470,6 +491,9 @@ func (m *Model) addOutputLine(line, lineType string) {
 	m.seenMessages[key] = true
 
 	m.outputLines = append(m.outputLines, line)
+	if lineType != "agent_message" && lineType != "" {
+		m.appendTranscriptLine(line, lineType)
+	}
 	// Keep last 200 lines
 	if len(m.outputLines) > 200 {
 		m.outputLines = m.outputLines[len(m.outputLines)-200:]
@@ -486,6 +510,85 @@ func (m *Model) addReasoningLine(line string) {
 
 	// Replace the reasoning lines entirely (cumulative update)
 	m.reasoningLines = []string{line}
+	m.upsertTranscriptReasoning(line)
+}
+
+func (m *Model) appendTranscriptAssistant(body string) {
+	if m.transcript == nil {
+		return
+	}
+	m.assistantMsgSeq++
+	m.assistantCurrentMsgID = fmt.Sprintf("assistant:%d", m.assistantMsgSeq)
+	m.transcript.Upsert(transcript.Item{
+		ID:   m.assistantCurrentMsgID,
+		At:   time.Now(),
+		Role: transcript.RoleAssistant,
+		Kind: transcript.KindMessage,
+		Body: body,
+	})
+}
+
+func (m *Model) upsertTranscriptAssistant(body string) {
+	if m.transcript == nil {
+		return
+	}
+	id := m.assistantCurrentMsgID
+	if id == "" {
+		m.appendTranscriptAssistant(body)
+		return
+	}
+	m.transcript.Upsert(transcript.Item{
+		ID:   id,
+		At:   time.Now(),
+		Role: transcript.RoleAssistant,
+		Kind: transcript.KindMessage,
+		Body: body,
+	})
+}
+
+func (m *Model) upsertTranscriptReasoning(body string) {
+	if m.transcript == nil {
+		return
+	}
+	m.transcript.Upsert(transcript.Item{
+		ID:   "reasoning",
+		At:   time.Now(),
+		Role: transcript.RoleAssistant,
+		Kind: transcript.KindReasoning,
+		Body: body,
+	})
+}
+
+func (m *Model) appendTranscriptLine(body, lineType string) {
+	if m.transcript == nil {
+		return
+	}
+	role := transcript.RoleSystem
+	kind := transcript.KindNotice
+	title := ""
+
+	switch lineType {
+	case "tool_call":
+		role = transcript.RoleTool
+		kind = transcript.KindToolCall
+	case "raw":
+		role = transcript.RoleSystem
+		kind = transcript.KindNotice
+	default:
+		// Unknown types show up as system notices so they don't get lost.
+		role = transcript.RoleSystem
+		kind = transcript.KindNotice
+		title = lineType
+	}
+
+	m.transcript.Append(transcript.Item{
+		ID:    "",
+		At:    time.Now(),
+		Role:  role,
+		Kind:  kind,
+		Title: title,
+		Body:  body,
+	})
 }
 
 // updateActiveTask updates the active task based on loop progress

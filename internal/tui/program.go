@@ -10,8 +10,10 @@ import (
 	"github.com/brainwhocodes/lisa-loop/internal/codex"
 	"github.com/brainwhocodes/lisa-loop/internal/loop"
 	"github.com/brainwhocodes/lisa-loop/internal/tui/effects"
+	"github.com/brainwhocodes/lisa-loop/internal/tui/markdown"
 	"github.com/brainwhocodes/lisa-loop/internal/tui/msg"
 	"github.com/brainwhocodes/lisa-loop/internal/tui/plan"
+	"github.com/brainwhocodes/lisa-loop/internal/tui/transcript"
 )
 
 // Program wraps the Bubble Tea program
@@ -86,6 +88,8 @@ func NewProgram(config codex.Config, controller *loop.Controller, explicitMode .
 		activity:       "",
 		controller:     controller,
 		readFile:       effects.OSReadFile,
+		md:             markdown.New(),
+		transcript:     transcript.New(500),
 		activeTaskIdx:  -1,
 		backend:        config.Backend,
 		outputLines:    []string{},
