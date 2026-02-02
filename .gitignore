@@ -1,6 +1,9 @@
 # Binary
 ralph
 
+# Local build outputs
+bin/lisa
+
 # Ralph state files
 .call_count
 .last_reset
