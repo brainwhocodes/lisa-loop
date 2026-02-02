@@ -2,11 +2,13 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/brainwhocodes/lisa-loop/internal/loop"
+	"github.com/brainwhocodes/lisa-loop/internal/tui/effects"
 	tuimsg "github.com/brainwhocodes/lisa-loop/internal/tui/msg"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -62,7 +64,7 @@ type Model struct {
 	planFile      string           // Name of loaded plan file (e.g., REFACTOR_PLAN.md)
 	projectMode   loop.ProjectMode // Current project mode (implementation, refactor, fix)
 	activity      string           // Current activity description
-	controller    *loop.Controller
+	controller    Controller
 	ctx           context.Context
 	cancel        context.CancelFunc
 	activeTaskIdx int // Index of currently active task (-1 if none)
@@ -128,21 +130,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyCtrlQ:
 			m.quitting = true
+			if m.cancel != nil {
+				m.cancel()
+				m.cancel = nil
+				m.ctx = nil
+			}
 			return m, tea.Quit
 
 		case tea.KeyRunes:
 			switch msg.String() {
 			case "q":
 				m.quitting = true
+				if m.cancel != nil {
+					m.cancel()
+					m.cancel = nil
+					m.ctx = nil
+				}
 				return m, tea.Quit
 
 			case "r":
 				if m.state != StateRunning && m.controller != nil {
+					// "Run / Restart" - ensure we don't leave a previous run behind.
+					if m.cancel != nil {
+						m.cancel()
+						m.cancel = nil
+						m.ctx = nil
+					}
 					m.state = StateRunning
 					m.activeTaskIdx = 0 // Start with first task
 					m.ctx, m.cancel = context.WithCancel(context.Background())
-					go m.runController()
-					return m, nil
+					return m, effects.RunController(m.ctx, m.controller)
 				}
 
 			case "p":
@@ -350,6 +367,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		return m, nil
+
+	case tuimsg.ControllerDoneMsg:
+		// The controller is finished; treat nil error as a clean exit. Cancellations happen on quit/restart.
+		if msg.Err != nil && !errors.Is(msg.Err, context.Canceled) {
+			m.state = StateError
+			m.err = msg.Err
+			return m, nil
+		}
+		if errors.Is(msg.Err, context.Canceled) || m.quitting {
+			return m, nil
+		}
+		m.state = StateComplete
+		m.activeTaskIdx = -1
 		return m, nil
 
 	case tuimsg.CodexOutputMsg:
@@ -686,18 +717,6 @@ func (m *Model) updatePhaseCompletion() {
 	// All phases complete
 	if len(m.phases) > 0 {
 		m.currentPhase = len(m.phases) - 1
-	}
-}
-
-func (m *Model) runController() {
-	if m.controller == nil {
-		return
-	}
-	if err := m.controller.Run(m.ctx); err != nil {
-		// Controller errors are already logged via event callbacks
-		// Just ensure state is updated
-		m.state = StateError
-		m.err = err
 	}
 }
 

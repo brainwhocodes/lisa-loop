@@ -37,6 +37,12 @@ type ControllerEventMsg struct {
 	Event loop.LoopEvent
 }
 
+// ControllerDoneMsg is sent when the controller Run() command returns.
+// The controller itself continues to emit fine-grained progress via ControllerEventMsg.
+type ControllerDoneMsg struct {
+	Err error
+}
+
 // CodexOutputMsg represents a line of output from a backend stream.
 type CodexOutputMsg struct {
 	Line string

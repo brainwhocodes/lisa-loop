@@ -17,7 +17,7 @@ import (
 // Program wraps the Bubble Tea program
 type Program struct {
 	model      Model
-	controller *loop.Controller
+	controller Controller
 }
 
 // NewProgram creates a new TUI program
