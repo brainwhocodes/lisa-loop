@@ -14,18 +14,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// ViewMode represents the current view mode
-type ViewMode string
-
-const (
-	ViewModeSplit   ViewMode = "split"   // Split pane (tasks + output)
-	ViewModeTasks   ViewMode = "tasks"   // Full tasks view
-	ViewModeOutput  ViewMode = "output"  // Full output view
-	ViewModeLogs    ViewMode = "logs"    // Full logs view
-	ViewModeHelp    ViewMode = "help"    // Help view
-	ViewModeCircuit ViewMode = "circuit" // Circuit breaker view
-)
-
 // Model represents main TUI model
 type Model struct {
 	state         State
@@ -35,11 +23,9 @@ type Model struct {
 	callsUsed     int
 	circuitState  string
 	logs          []string
-	activeView    string
-	viewMode      ViewMode // Current view mode for split/full views
+	screen        Screen
 	quitting      bool
 	err           error
-	helpVisible   bool
 	startTime     time.Time
 	tick          int              // Animation tick counter
 	width         int              // Terminal width
@@ -166,55 +152,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			case "l":
 				// Toggle logs full view
-				if m.viewMode == ViewModeLogs {
-					m.viewMode = ViewModeSplit
-					m.activeView = "status"
+				if m.screen == ScreenLogs {
+					m.screen = ScreenSplit
 				} else {
-					m.viewMode = ViewModeLogs
-					m.activeView = "logs"
+					m.screen = ScreenLogs
 				}
 				return m, nil
 
 			case "t":
 				// Toggle tasks full view
-				if m.viewMode == ViewModeTasks {
-					m.viewMode = ViewModeSplit
-					m.activeView = "status"
+				if m.screen == ScreenTasks {
+					m.screen = ScreenSplit
 				} else {
-					m.viewMode = ViewModeTasks
-					m.activeView = "tasks"
+					m.screen = ScreenTasks
 				}
 				return m, nil
 
 			case "o":
 				// Toggle output full view
-				if m.viewMode == ViewModeOutput {
-					m.viewMode = ViewModeSplit
-					m.activeView = "status"
+				if m.screen == ScreenOutput {
+					m.screen = ScreenSplit
 				} else {
-					m.viewMode = ViewModeOutput
-					m.activeView = "output"
+					m.screen = ScreenOutput
 				}
 				return m, nil
 
 			case "?":
-				m.helpVisible = !m.helpVisible
-				if m.helpVisible {
-					m.viewMode = ViewModeHelp
-					m.activeView = "help"
+				if m.screen == ScreenHelp {
+					m.screen = ScreenSplit
 				} else {
-					m.viewMode = ViewModeSplit
-					m.activeView = "status"
+					m.screen = ScreenHelp
 				}
 				return m, nil
 
 			case "c":
-				if m.viewMode == ViewModeCircuit {
-					m.viewMode = ViewModeSplit
-					m.activeView = "status"
+				if m.screen == ScreenCircuit {
+					m.screen = ScreenSplit
 				} else {
-					m.viewMode = ViewModeCircuit
-					m.activeView = "circuit"
+					m.screen = ScreenCircuit
 				}
 				return m, nil
 
@@ -741,23 +716,23 @@ func (m Model) View() string {
 	}
 
 	// Show error view if there's an error
-	if m.err != nil && m.viewMode != ViewModeHelp {
+	if m.err != nil && m.screen != ScreenHelp {
 		content := m.renderErrorView()
 		return m.padToFullScreen(content, width, height)
 	}
 
-	// Get content based on view mode
+	// Get content based on screen
 	var content string
-	switch m.viewMode {
-	case ViewModeHelp:
+	switch m.screen {
+	case ScreenHelp:
 		content = m.renderHelpView()
-	case ViewModeCircuit:
+	case ScreenCircuit:
 		content = m.renderCircuitView()
-	case ViewModeTasks:
+	case ScreenTasks:
 		content = m.renderTasksFullView()
-	case ViewModeOutput:
+	case ScreenOutput:
 		content = m.renderOutputFullView()
-	case ViewModeLogs:
+	case ScreenLogs:
 		content = m.renderLogsFullView()
 	default:
 		// Default to split view

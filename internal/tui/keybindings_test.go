@@ -53,22 +53,22 @@ func TestGetKeybindingHelp(t *testing.T) {
 // TestModelToggleCircuitView tests circuit view toggle
 func TestModelToggleCircuitView(t *testing.T) {
 	model := Model{
-		activeView: "status",
+		screen: ScreenSplit,
 	}
 
 	// Toggle to circuit view
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}}
 	newModel, _ := model.Update(msg)
 
-	if newModel.(Model).activeView != "circuit" {
-		t.Errorf("Expected circuit view, got %s", newModel.(Model).activeView)
+	if newModel.(Model).screen != ScreenCircuit {
+		t.Errorf("Expected circuit screen, got %v", newModel.(Model).screen)
 	}
 
 	// Toggle back to status
 	newModel, _ = newModel.(Model).Update(msg)
 
-	if newModel.(Model).activeView != "status" {
-		t.Errorf("Expected status view, got %s", newModel.(Model).activeView)
+	if newModel.(Model).screen != ScreenSplit {
+		t.Errorf("Expected split screen, got %v", newModel.(Model).screen)
 	}
 }
 
@@ -100,28 +100,28 @@ func TestModelResetCircuit(t *testing.T) {
 // TestRenderCircuitView tests circuit breaker view rendering
 func TestRenderCircuitView(t *testing.T) {
 	tests := []struct {
-		name           string
-		circuitState   string
-		expectedLabel  string
-		shouldContain  string
+		name          string
+		circuitState  string
+		expectedLabel string
+		shouldContain string
 	}{
 		{
-			name:           "CLOSED state",
-			circuitState:   "CLOSED",
-			expectedLabel:  "closed",
-			shouldContain:  "operational",
+			name:          "CLOSED state",
+			circuitState:  "CLOSED",
+			expectedLabel: "closed",
+			shouldContain: "operational",
 		},
 		{
-			name:           "HALF_OPEN state",
-			circuitState:   "HALF_OPEN",
-			expectedLabel:  "half-open",
-			shouldContain:  "monitoring",
+			name:          "HALF_OPEN state",
+			circuitState:  "HALF_OPEN",
+			expectedLabel: "half-open",
+			shouldContain: "monitoring",
 		},
 		{
-			name:           "OPEN state",
-			circuitState:   "OPEN",
-			expectedLabel:  "open",
-			shouldContain:  "halted",
+			name:          "OPEN state",
+			circuitState:  "OPEN",
+			expectedLabel: "open",
+			shouldContain: "halted",
 		},
 	}
 

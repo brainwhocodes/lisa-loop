@@ -112,53 +112,44 @@ func TestModelTogglePause(t *testing.T) {
 // TestModelToggleView tests view toggling
 func TestModelToggleView(t *testing.T) {
 	model := Model{
-		activeView: "status",
+		screen: ScreenSplit,
 	}
 
 	// Toggle to logs
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}
 	newModel, _ := model.Update(msg)
 
-	if newModel.(Model).activeView != "logs" {
-		t.Errorf("Expected logs view, got %s", newModel.(Model).activeView)
+	if newModel.(Model).screen != ScreenLogs {
+		t.Errorf("Expected logs screen, got %v", newModel.(Model).screen)
 	}
 
 	// Toggle back to status
 	newModel, _ = newModel.(Model).Update(msg)
 
-	if newModel.(Model).activeView != "status" {
-		t.Errorf("Expected status view, got %s", newModel.(Model).activeView)
+	if newModel.(Model).screen != ScreenSplit {
+		t.Errorf("Expected split screen, got %v", newModel.(Model).screen)
 	}
 }
 
 // TestModelToggleHelp tests help toggle
 func TestModelToggleHelp(t *testing.T) {
 	model := Model{
-		activeView:  "status",
-		helpVisible: false,
+		screen: ScreenSplit,
 	}
 
 	// Show help
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}
 	newModel, _ := model.Update(msg)
 
-	if !newModel.(Model).helpVisible {
-		t.Error("Help should be visible")
-	}
-
-	if newModel.(Model).activeView != "help" {
-		t.Errorf("Expected help view, got %s", newModel.(Model).activeView)
+	if newModel.(Model).screen != ScreenHelp {
+		t.Errorf("Expected help screen, got %v", newModel.(Model).screen)
 	}
 
 	// Hide help
 	newModel, _ = newModel.(Model).Update(msg)
 
-	if newModel.(Model).helpVisible {
-		t.Error("Help should be hidden")
-	}
-
-	if newModel.(Model).activeView != "status" {
-		t.Errorf("Expected status view, got %s", newModel.(Model).activeView)
+	if newModel.(Model).screen != ScreenSplit {
+		t.Errorf("Expected split screen, got %v", newModel.(Model).screen)
 	}
 }
 

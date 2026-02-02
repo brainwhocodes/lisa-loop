@@ -12,30 +12,29 @@ import (
 
 func TestViewToggles_TasksAndOutput(t *testing.T) {
 	model := Model{
-		activeView: "status",
-		viewMode:   ViewModeSplit,
+		screen: ScreenSplit,
 	}
 
 	// Toggle tasks
 	msg := teaKey('t')
 	newModel, _ := model.Update(msg)
-	if newModel.(Model).viewMode != ViewModeTasks {
-		t.Fatalf("expected tasks view, got %q", newModel.(Model).viewMode)
+	if newModel.(Model).screen != ScreenTasks {
+		t.Fatalf("expected tasks screen, got %v", newModel.(Model).screen)
 	}
 	newModel, _ = newModel.(Model).Update(msg)
-	if newModel.(Model).viewMode != ViewModeSplit {
-		t.Fatalf("expected split view after second toggle, got %q", newModel.(Model).viewMode)
+	if newModel.(Model).screen != ScreenSplit {
+		t.Fatalf("expected split screen after second toggle, got %v", newModel.(Model).screen)
 	}
 
 	// Toggle output
 	msg = teaKey('o')
 	newModel, _ = model.Update(msg)
-	if newModel.(Model).viewMode != ViewModeOutput {
-		t.Fatalf("expected output view, got %q", newModel.(Model).viewMode)
+	if newModel.(Model).screen != ScreenOutput {
+		t.Fatalf("expected output screen, got %v", newModel.(Model).screen)
 	}
 	newModel, _ = newModel.(Model).Update(msg)
-	if newModel.(Model).viewMode != ViewModeSplit {
-		t.Fatalf("expected split view after second toggle, got %q", newModel.(Model).viewMode)
+	if newModel.(Model).screen != ScreenSplit {
+		t.Fatalf("expected split screen after second toggle, got %v", newModel.(Model).screen)
 	}
 }
 

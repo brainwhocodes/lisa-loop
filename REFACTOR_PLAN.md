@@ -16,21 +16,21 @@ Entry points / program creation:
 - `cmd/lisa/main.go`: `runWithMonitor(...)` builds a loop `Controller`, then calls `tui.NewProgram(...)` and `program.Run()`.
 - `internal/tui/program.go`: `Program.Run()` constructs `tea.NewProgram(p.model, tea.WithAltScreen(), tea.WithMouseCellMotion())`.
 - The main Bubble Tea model is `internal/tui/model.go` (`type Model struct{ ... }`).
-- Screens are currently represented by `viewMode` (`split/tasks/output/logs/help/circuit`) plus error handling via `m.err` and `StateError`.
+- Screens are represented by an explicit `Screen` router (`split/tasks/output/logs/help/circuit`) plus error handling via `m.err` and `StateError`.
 
 Message flow:
 - User input: `Model.Update(tea.KeyMsg)` handles:
   - quit (`q`, `Ctrl+C`, `Ctrl+Q`)
   - run (`r`) which currently spawns a goroutine (`go m.runController()`)
   - pause/resume (`p`) calls `m.controller.Pause()/Resume()`
-  - view toggles (`l/t/o/?/c`) mutate `viewMode` and `activeView`
+  - view toggles (`l/t/o/?/c`) switch the active `Screen`
 - Loop/controller input:
   - `internal/tui/program.go` sets `controller.SetEventCallback(...)` and uses `program.Send(ControllerEventMsg{...})`.
   - `Model.Update(msg.ControllerEventMsg)` mutates UI state from loop events (status/logs/output/tool/analysis/preflight/outcome).
 - Animation: `Model.Init()` schedules `tea.Tick(...)`; `msg.TickMsg` increments `m.tick` and re-schedules.
 
 Rendering:
-- `Model.View()` chooses a renderer based on `viewMode`, then pads to full screen and applies a global background.
+- `Model.View()` chooses a renderer based on the active `Screen`, then pads to full screen and applies a global background.
 - Rendering helpers are spread across:
   - `internal/tui/views.go`: header/status bar/split panes/tasks/output/logs/preflight panels and helpers.
   - `internal/tui/model.go`: error view, circuit view, rate-limit progress, and padding/background wrapper.
@@ -102,7 +102,7 @@ Stability rules:
 Follow `COMMIT_SERIES.md` and use the per-commit checklist in `checklists/`.
 
 ### Phase 1: Safety Net (Baseline Tests + Documentation)
-- [ ] Add baseline tests for view routing (keybindings -> viewMode) and stable render sections (header/footer/status) with fixed widths.
+- [ ] Add baseline tests for view routing (keybindings -> screen) and stable render sections (header/footer/status) with fixed widths.
 - [ ] Add reducer-level tests for output/reasoning deduplication behavior (pure logic only).
 - [ ] Document current routing/state invariants in code comments near the root model.
 
@@ -131,7 +131,7 @@ Follow `COMMIT_SERIES.md` and use the per-commit checklist in `checklists/`.
 - [ ] Reduce per-frame style construction in render functions (especially `lipgloss.NewStyle()` calls inside `View()` paths).
 
 ### Phase 7: Cleanup & Consolidation
-- [ ] Delete or deprecate redundant fields (`activeView`, `helpVisible`) once router is the source of truth.
+- [ ] Delete or deprecate redundant fields (`activeView`, `helpVisible`) once router is the source of truth. (Done: replaced by `Screen`.)
 - [ ] Reduce `internal/tui/model.go` and `internal/tui/views.go` size by moving cohesive blocks into packages.
 - [ ] Update docs (`internal/tui/REDESIGN.md` if needed) to match the new structure.
 
