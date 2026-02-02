@@ -46,12 +46,12 @@ func TestLoadPromptTemplate(t *testing.T) {
 				os.MkdirAll(homeDir, 0755)
 				os.Setenv("HOME", homeDir)
 
-				ralphDir := filepath.Join(homeDir, ".ralph", "templates")
-				os.MkdirAll(ralphDir, 0755)
+				lisaDir := filepath.Join(homeDir, ".lisa", "templates")
+				os.MkdirAll(lisaDir, 0755)
 
 				// Create home template
 				homeContent := "Home template content"
-				os.WriteFile(filepath.Join(ralphDir, "test.md"), []byte(homeContent), 0644)
+				os.WriteFile(filepath.Join(lisaDir, "test.md"), []byte(homeContent), 0644)
 
 				cleanup := func() {
 					os.Unsetenv("HOME")
@@ -89,9 +89,9 @@ func TestLoadPromptTemplate(t *testing.T) {
 				homeDir := filepath.Join(tmpDir, "home")
 				os.MkdirAll(homeDir, 0755)
 				os.Setenv("HOME", homeDir)
-				ralphDir := filepath.Join(homeDir, ".ralph", "templates")
-				os.MkdirAll(ralphDir, 0755)
-				os.WriteFile(filepath.Join(ralphDir, "test.md"), []byte("Home version"), 0644)
+				lisaDir := filepath.Join(homeDir, ".lisa", "templates")
+				os.MkdirAll(lisaDir, 0755)
+				os.WriteFile(filepath.Join(lisaDir, "test.md"), []byte("Home version"), 0644)
 
 				// Create custom directory with different template
 				customDir := filepath.Join(tmpDir, "custom")
@@ -166,12 +166,12 @@ func TestLoadPromptTemplate_ResolutionOrder(t *testing.T) {
 	defaultDir := filepath.Join(tmpDir, "default")
 
 	os.MkdirAll(customDir, 0755)
-	os.MkdirAll(filepath.Join(homeDir, ".ralph", "templates"), 0755)
+	os.MkdirAll(filepath.Join(homeDir, ".lisa", "templates"), 0755)
 	os.MkdirAll(defaultDir, 0755)
 
 	// Create templates at each level with different content
 	os.WriteFile(filepath.Join(customDir, "tier_test.md"), []byte("custom"), 0644)
-	os.WriteFile(filepath.Join(homeDir, ".ralph", "templates", "tier_test.md"), []byte("home"), 0644)
+	os.WriteFile(filepath.Join(homeDir, ".lisa", "templates", "tier_test.md"), []byte("home"), 0644)
 	os.WriteFile(filepath.Join(defaultDir, "tier_test.md"), []byte("default"), 0644)
 
 	// Set HOME environment

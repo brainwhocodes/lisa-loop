@@ -266,6 +266,11 @@ func (c *Client) ModelID() string {
 type SSEEvent struct {
 	Type       string          `json:"type"`
 	Properties json.RawMessage `json:"properties"`
+	// OpenCode wraps events in a payload field
+	Payload *struct {
+		Type       string          `json:"type"`
+		Properties json.RawMessage `json:"properties"`
+	} `json:"payload"`
 }
 
 // MessageUpdatedProps contains properties for message.updated events
@@ -274,6 +279,15 @@ type MessageUpdatedProps struct {
 		ID        string `json:"id"`
 		SessionID string `json:"sessionID"`
 		Role      string `json:"role"`
+		Time      struct {
+			Created int64 `json:"created"`
+		} `json:"time"`
+		ParentID string `json:"parentID,omitempty"`
+		Model    struct {
+			ProviderID string `json:"providerID"`
+			ModelID    string `json:"modelID"`
+		} `json:"model,omitempty"`
+		Agent string `json:"agent,omitempty"`
 	} `json:"info"`
 }
 
@@ -285,6 +299,7 @@ type PartUpdatedProps struct {
 		MessageID string `json:"messageID"`
 		Type      string `json:"type"`
 		Text      string `json:"text"`
+		Delta     string `json:"delta,omitempty"` // Incremental update
 		// Tool-specific fields
 		Tool   string `json:"tool,omitempty"`
 		CallID string `json:"callID,omitempty"`
@@ -293,6 +308,18 @@ type PartUpdatedProps struct {
 			Input  map[string]interface{} `json:"input,omitempty"`
 		} `json:"state,omitempty"`
 	} `json:"part"`
+}
+
+// SessionDiffProps contains properties for session.diff events
+type SessionDiffProps struct {
+	SessionID string `json:"sessionID"`
+	Diff      []struct {
+		File      string `json:"file"`
+		Before    string `json:"before"`
+		After     string `json:"after"`
+		Additions int    `json:"additions"`
+		Deletions int    `json:"deletions"`
+	} `json:"diff"`
 }
 
 // SessionStatusProps contains properties for session.status events
@@ -582,6 +609,7 @@ func (c *Client) sendMessageStreamingInternal(ctx context.Context, sessionID, co
 		defer closeBody(sseResp.Body)
 
 		reader := bufio.NewReader(sseResp.Body)
+		var currentEventType string
 		for {
 			line, err := reader.ReadString('\n')
 			if err != nil {
@@ -595,16 +623,43 @@ func (c *Client) sendMessageStreamingInternal(ctx context.Context, sessionID, co
 			}
 
 			line = strings.TrimSpace(line)
-			if line == "" || !strings.HasPrefix(line, "data: ") {
+			if line == "" {
+				continue
+			}
+
+			// Handle SSE event type line
+			if strings.HasPrefix(line, "event: ") {
+				currentEventType = strings.TrimPrefix(line, "event: ")
+				continue
+			}
+
+			// Handle SSE data line
+			if !strings.HasPrefix(line, "data: ") {
 				continue
 			}
 
 			data := strings.TrimPrefix(line, "data: ")
 
+			// Debug: log raw SSE data (full data for debugging)
+			log.Printf("[SSE RAW] Type: %s, Data: %s", currentEventType, data)
+
 			var event SSEEvent
 			if err := json.Unmarshal([]byte(data), &event); err != nil {
+				log.Printf("[SSE ERROR] Failed to unmarshal: %v, data: %s", err, data)
 				continue
 			}
+
+			// Extract type and properties from payload if present (OpenCode format)
+			if event.Payload != nil {
+				event.Type = event.Payload.Type
+				event.Properties = event.Payload.Properties
+			}
+
+			// Use event type from SSE event line if JSON type is empty
+			if event.Type == "" && currentEventType != "" {
+				event.Type = currentEventType
+			}
+			currentEventType = "" // Reset for next event
 
 			if eventCb != nil {
 				eventCb(event)

@@ -56,9 +56,9 @@ func loadPromptTemplate(filename string) (string, error) {
 		}
 	}
 
-	// Try ~/.ralph/templates
+	// Try ~/.lisa/templates
 	if home, err := os.UserHomeDir(); err == nil {
-		homePath := filepath.Join(home, ".ralph", "templates", filename)
+		homePath := filepath.Join(home, ".lisa", "templates", filename)
 		if data, err := os.ReadFile(homePath); err == nil {
 			return string(data), nil
 		}
@@ -72,7 +72,7 @@ func loadPromptTemplate(filename string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("template %s not found (checked custom dir, ~/.ralph/templates, and default locations)", filename)
+	return "", fmt.Errorf("template %s not found (checked custom dir, ~/.lisa/templates, and default locations)", filename)
 }
 
 // GetImplementationPlanPrompt loads the implementation plan system prompt

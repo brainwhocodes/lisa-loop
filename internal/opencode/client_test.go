@@ -273,7 +273,6 @@ func TestSendMessageResponse_Content_Empty(t *testing.T) {
 	}
 }
 
-
 // Phase 4: OpenCode API Alignment Tests
 
 func TestHealthCheck(t *testing.T) {
@@ -550,3 +549,98 @@ func TestMustMarshalJSON(t *testing.T) {
 	}
 }
 
+func TestSSEEventParsing_WithEventType(t *testing.T) {
+	// Test that SSE event type lines are properly captured
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Skip("Flusher not supported")
+			return
+		}
+
+		// Send SSE event with event: line before data:
+		fmt.Fprint(w, "event: message.part.updated\n")
+		fmt.Fprint(w, "data: {\"part\":{\"id\":\"part-1\",\"type\":\"text\",\"text\":\"Hello\"}}\n\n")
+		flusher.Flush()
+
+		// Send another event
+		fmt.Fprint(w, "event: session.status\n")
+		fmt.Fprint(w, "data: {\"status\":{\"type\":\"idle\"}}\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{ServerURL: server.URL})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	var receivedEvents []SSEEvent
+	eventCb := func(event SSEEvent) {
+		receivedEvents = append(receivedEvents, event)
+	}
+
+	_, err := client.SendMessageStreaming(ctx, "test-session", "test", eventCb)
+	if err != nil {
+		// Expected since we're not sending a proper response
+		t.Logf("Expected error (no idle response): %v", err)
+	}
+
+	// Check that events were received with proper types
+	if len(receivedEvents) == 0 {
+		t.Fatal("No events received")
+	}
+
+	// First event should be message.part.updated
+	if receivedEvents[0].Type != "message.part.updated" {
+		t.Errorf("Expected first event type 'message.part.updated', got '%s'", receivedEvents[0].Type)
+	}
+
+	// Second event should be session.status
+	if len(receivedEvents) > 1 && receivedEvents[1].Type != "session.status" {
+		t.Errorf("Expected second event type 'session.status', got '%s'", receivedEvents[1].Type)
+	}
+}
+
+func TestSSEEventParsing_WithoutEventType(t *testing.T) {
+	// Test that SSE events without event: line still work (type in JSON)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Skip("Flusher not supported")
+			return
+		}
+
+		// Send SSE event with type in JSON only
+		fmt.Fprint(w, "data: {\"type\":\"message.updated\",\"properties\":{}}\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{ServerURL: server.URL})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	var receivedEvents []SSEEvent
+	eventCb := func(event SSEEvent) {
+		receivedEvents = append(receivedEvents, event)
+	}
+
+	_, err := client.SendMessageStreaming(ctx, "test-session", "test", eventCb)
+	if err != nil {
+		t.Logf("Expected error: %v", err)
+	}
+
+	if len(receivedEvents) == 0 {
+		t.Fatal("No events received")
+	}
+
+	if receivedEvents[0].Type != "message.updated" {
+		t.Errorf("Expected event type 'message.updated', got '%s'", receivedEvents[0].Type)
+	}
+}

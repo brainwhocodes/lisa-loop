@@ -85,7 +85,7 @@ func DetectFormat(output string) OutputFormat {
 		}
 
 		// Check for RALPH_STATUS block in text format
-		if strings.Contains(trimmedLine, "---RALPH_STATUS---") {
+		if strings.Contains(trimmedLine, "---RALPH_STATUS---") || strings.Contains(trimmedLine, "---LISA_STATUS---") {
 			return FormatText
 		}
 	}
@@ -94,10 +94,10 @@ func DetectFormat(output string) OutputFormat {
 	return FormatText
 }
 
-// ParseRALPHStatus extracts status information from a RALPH_STATUS block
+// ParseRALPHStatus extracts status information from a RALPH_STATUS or LISA_STATUS block
 func ParseRALPHStatus(output string) *RALPHStatus {
-	// Find RALPH_STATUS block
-	statusBlockRegex := regexp.MustCompile(`(?s)---RALPH_STATUS---([\s\S]+?)---END_RALPH_STATUS---`)
+	// Find RALPH_STATUS or LISA_STATUS block
+	statusBlockRegex := regexp.MustCompile(`(?s)---(?:RALPH|LISA)_STATUS---([\s\S]+?)---END_(?:RALPH|LISA)_STATUS---`)
 	matches := statusBlockRegex.FindStringSubmatch(output)
 
 	if len(matches) < 2 {
@@ -172,7 +172,7 @@ func ParseRALPHStatus(output string) *RALPHStatus {
 
 // analyzeJSONOutput analyzes JSON-format output
 func analyzeJSONOutput(output string) (*RALPHStatus, int) {
-	// Try to find RALPH_STATUS in JSON
+	// Try to find LISA_STATUS or RALPH_STATUS in JSON
 	status := ParseRALPHStatus(output)
 
 	completionCount := 0

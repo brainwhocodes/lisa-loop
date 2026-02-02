@@ -6,6 +6,7 @@ import (
 
 // Log level constants
 const (
+	LogLevelDebug   = "DEBUG"
 	LogLevelInfo    = "INFO"
 	LogLevelWarn    = "WARN"
 	LogLevelError   = "ERROR"
@@ -264,7 +265,7 @@ var (
 			Bold(true)
 
 	StylePaneContent = lipgloss.NewStyle().
-			Foreground(Smoke)
+				Foreground(Smoke)
 )
 
 // Reasoning/thinking styles
@@ -281,6 +282,8 @@ var (
 // StyledLogEntry returns a styled log entry with Crush-style icons
 func StyledLogEntry(level, message string) string {
 	switch level {
+	case LogLevelDebug:
+		return StyleTextMuted.Render("  " + message)
 	case LogLevelInfo:
 		return StyleTextMuted.Render(IconInfo + " " + message)
 	case LogLevelWarn:

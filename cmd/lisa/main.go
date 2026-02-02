@@ -60,7 +60,7 @@ func main() {
 	fs.IntVar(&timeout, "timeout", 600, "Codex timeout (seconds)")
 
 	// Backend selection
-	fs.StringVar(&backend, "backend", "cli", "Backend: cli or opencode")
+	fs.StringVar(&backend, "backend", "opencode", "Backend: cli or opencode (default: opencode)")
 
 	// OpenCode backend settings (with env fallbacks)
 	fs.StringVar(&opencodeServerURL, "opencode-url", "", "OpenCode server URL (env: OPENCODE_SERVER_URL)")
@@ -222,17 +222,17 @@ func handleInitCommand(mode string, projectDir string, maxCalls int, timeout int
 
 	// Now launch the TUI
 	config := loop.Config{
-		Backend:            backend,
-		ProjectPath:        ".",
-		PromptPath:         "PROMPT.md",
-		MaxCalls:           maxCalls,
-		Timeout:            timeout,
-		Verbose:            verbose,
-		ResetCircuit:       false,
-		OpenCodeServerURL:  ocSettings.serverURL,
-		OpenCodeUsername:   ocSettings.username,
-		OpenCodePassword:   ocSettings.password,
-		OpenCodeModelID:    ocSettings.modelID,
+		Backend:           backend,
+		ProjectPath:       ".",
+		PromptPath:        "PROMPT.md",
+		MaxCalls:          maxCalls,
+		Timeout:           timeout,
+		Verbose:           verbose,
+		ResetCircuit:      false,
+		OpenCodeServerURL: ocSettings.serverURL,
+		OpenCodeUsername:  ocSettings.username,
+		OpenCodePassword:  ocSettings.password,
+		OpenCodeModelID:   ocSettings.modelID,
 	}
 
 	rateLimiter := loop.NewRateLimiter(config.MaxCalls, 1)
@@ -294,7 +294,7 @@ func handleSetupCommand(projectName string, prompt string, init bool, withGit bo
 	}
 	fmt.Println("\nNext steps:")
 	fmt.Printf("  cd %s\n", projectName)
-	fmt.Println("  ralph --monitor")
+	fmt.Println("  lisa --monitor")
 }
 
 func handleImportCommand(sourcePath string, projectName string, outputDir string, verbose bool) {
@@ -342,7 +342,7 @@ func handleImportCommand(sourcePath string, projectName string, outputDir string
 
 	fmt.Println(result.GetConversionSummary())
 	fmt.Println("\nNext steps:")
-	fmt.Println("  ralph --monitor")
+	fmt.Println("  lisa --monitor")
 }
 
 func handleStatusCommand(projectPath string) {
@@ -353,7 +353,7 @@ func handleStatusCommand(projectPath string) {
 
 	if err := project.ValidateProject(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Run 'ralph setup' to create a new project\n")
+		fmt.Fprintf(os.Stderr, "Run 'lisa setup' to create a new project\n")
 		os.Exit(1)
 	}
 
@@ -397,7 +397,7 @@ func handleResetCircuitCommand(projectPath string) {
 	fmt.Println("   State: CLOSED")
 	fmt.Println("   Ready to resume loop")
 	fmt.Println("\nNext step:")
-	fmt.Println("  ralph --monitor")
+	fmt.Println("  lisa --monitor")
 }
 
 func handleSyncCommand(projectPath string, verbose bool) {
@@ -462,22 +462,22 @@ func handleRunCommand(projectPath string, promptFile string, maxCalls int, timeo
 
 	if err := project.ValidateProject(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Run 'ralph setup' to create a new project\n")
+		fmt.Fprintf(os.Stderr, "Run 'lisa setup' to create a new project\n")
 		os.Exit(1)
 	}
 
 	config := loop.Config{
-		Backend:            backend,
-		ProjectPath:        projectPath,
-		PromptPath:         promptFile,
-		MaxCalls:           maxCalls,
-		Timeout:            timeout,
-		Verbose:            verbose,
-		ResetCircuit:       false,
-		OpenCodeServerURL:  ocSettings.serverURL,
-		OpenCodeUsername:   ocSettings.username,
-		OpenCodePassword:   ocSettings.password,
-		OpenCodeModelID:    ocSettings.modelID,
+		Backend:           backend,
+		ProjectPath:       projectPath,
+		PromptPath:        promptFile,
+		MaxCalls:          maxCalls,
+		Timeout:           timeout,
+		Verbose:           verbose,
+		ResetCircuit:      false,
+		OpenCodeServerURL: ocSettings.serverURL,
+		OpenCodeUsername:  ocSettings.username,
+		OpenCodePassword:  ocSettings.password,
+		OpenCodeModelID:   ocSettings.modelID,
 	}
 
 	rateLimiter := loop.NewRateLimiter(config.MaxCalls, 1)
@@ -756,7 +756,7 @@ func printHelp() {
 	fmt.Println("  --log-format <format>   Log format: text, json, or logfmt (enables CLI log mode)")
 	fmt.Println("")
 	fmt.Println("Backend options:")
-	fmt.Println("  --backend <name>        Backend: cli or opencode (default: cli)")
+	fmt.Println("  --backend <name>        Backend: cli or opencode (default: opencode)")
 	fmt.Println("  --opencode-url <url>    OpenCode server URL (env: OPENCODE_SERVER_URL)")
 	fmt.Println("  --opencode-user <user>  OpenCode username (env: OPENCODE_SERVER_USERNAME, default: opencode)")
 	fmt.Println("  --opencode-pass <pass>  OpenCode password (env: OPENCODE_SERVER_PASSWORD)")

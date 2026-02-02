@@ -236,7 +236,7 @@ func BuildContext(loopNum int, remainingTasks []string, circuitState string, pre
 func BuildContextWithPlanFile(loopNum int, remainingTasks []string, circuitState string, prevSummary string, planFile string) (string, error) {
 	var ctxBuilder strings.Builder
 
-	ctxBuilder.WriteString("\n--- RALPH LOOP CONTEXT ---\n")
+	ctxBuilder.WriteString("\n--- LISA LOOP CONTEXT ---\n")
 	fmt.Fprintf(&ctxBuilder, "Loop: %d\n", loopNum)
 	fmt.Fprintf(&ctxBuilder, "Circuit Breaker: %s\n", circuitState)
 
@@ -266,15 +266,15 @@ func BuildContextWithPlanFile(loopNum int, remainingTasks []string, circuitState
 	ctxBuilder.WriteString("\n** WORKFLOW REQUIREMENTS **\n")
 	ctxBuilder.WriteString("1. Work on ONE task from the plan\n")
 	fmt.Fprintf(&ctxBuilder, "2. After completing the task, EDIT %s to mark it `- [x]`\n", planFile)
-	ctxBuilder.WriteString("3. End your response with a RALPH_STATUS block:\n")
-	ctxBuilder.WriteString("---RALPH_STATUS---\n")
+	ctxBuilder.WriteString("3. End your response with a LISA_STATUS block:\n")
+	ctxBuilder.WriteString("---LISA_STATUS---\n")
 	ctxBuilder.WriteString("STATUS: WORKING | COMPLETE | BLOCKED\n")
 	ctxBuilder.WriteString("CURRENT_TASK: <exact text of task you just completed or are working on>\n")
 	ctxBuilder.WriteString("TASKS_COMPLETED_THIS_LOOP: <number>\n")
 	ctxBuilder.WriteString("FILES_MODIFIED: <number>\n")
 	ctxBuilder.WriteString("TESTS_STATUS: PASSING | FAILING | UNKNOWN\n")
 	ctxBuilder.WriteString("EXIT_SIGNAL: true (if ALL tasks [x]) | false (if work remains)\n")
-	ctxBuilder.WriteString("---END_RALPH_STATUS---\n")
+	ctxBuilder.WriteString("---END_LISA_STATUS---\n")
 
 	ctxBuilder.WriteString("--- END LOOP CONTEXT ---\n\n")
 

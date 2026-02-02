@@ -84,7 +84,7 @@ func TestBuildContextNoTasks(t *testing.T) {
 
 func TestInjectContext(t *testing.T) {
 	prompt := "Main prompt here"
-	context := "\n--- RALPH CONTEXT ---\nTest context\n--- END ---"
+	context := "\n--- LISA CONTEXT ---\nTest context\n--- END ---"
 
 	injected := InjectContext(prompt, context)
 

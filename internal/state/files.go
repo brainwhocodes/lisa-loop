@@ -105,14 +105,14 @@ func SaveCodexSession(id string) error {
 	return AtomicWrite(".codex_session_id", []byte(id))
 }
 
-// LoadLisaSession loads Lisa session metadata from .ralph_session
+// LoadLisaSession loads Lisa session metadata from .lisa_session
 func LoadLisaSession() (map[string]interface{}, error) {
-	return LoadState(".ralph_session", map[string]interface{}{})
+	return LoadState(".lisa_session", map[string]interface{}{})
 }
 
 // SaveLisaSession saves Lisa session metadata atomically
 func SaveLisaSession(session map[string]interface{}) error {
-	return SaveState(".ralph_session", session)
+	return SaveState(".lisa_session", session)
 }
 
 // LoadExitSignals loads recent exit signals from .exit_signals

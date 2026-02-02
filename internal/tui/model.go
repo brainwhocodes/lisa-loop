@@ -88,11 +88,11 @@ type Phase struct {
 type ViewMode string
 
 const (
-	ViewModeSplit  ViewMode = "split"  // Split pane (tasks + output)
-	ViewModeTasks  ViewMode = "tasks"  // Full tasks view
-	ViewModeOutput ViewMode = "output" // Full output view
-	ViewModeLogs   ViewMode = "logs"   // Full logs view
-	ViewModeHelp   ViewMode = "help"   // Help view
+	ViewModeSplit   ViewMode = "split"   // Split pane (tasks + output)
+	ViewModeTasks   ViewMode = "tasks"   // Full tasks view
+	ViewModeOutput  ViewMode = "output"  // Full output view
+	ViewModeLogs    ViewMode = "logs"    // Full logs view
+	ViewModeHelp    ViewMode = "help"    // Help view
 	ViewModeCircuit ViewMode = "circuit" // Circuit breaker view
 )
 
@@ -111,9 +111,9 @@ type Model struct {
 	err           error
 	helpVisible   bool
 	startTime     time.Time
-	tick          int    // Animation tick counter
-	width         int    // Terminal width
-	height        int    // Terminal height
+	tick          int              // Animation tick counter
+	width         int              // Terminal width
+	height        int              // Terminal height
 	tasks         []Task           // Tasks from plan file (flat list for backward compat)
 	phases        []Phase          // Tasks grouped by phase
 	currentPhase  int              // Index of current phase being worked on
@@ -165,7 +165,7 @@ type Model struct {
 	preflightSkipReason     string
 
 	// Loop outcome (from last iteration)
-	lastOutcome        *loop.LoopOutcome
+	lastOutcome         *loop.LoopOutcome
 	totalTasksCompleted int // Cumulative tasks completed
 }
 
@@ -384,6 +384,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.preflightCallsRemaining = event.Preflight.CallsRemaining
 				m.preflightShouldSkip = event.Preflight.ShouldSkip
 				m.preflightSkipReason = event.Preflight.SkipReason
+
+				// Reload tasks from plan file to sync with external changes
+				m.reloadTasks()
 
 				// Log preflight info
 				m.addLog(string(loop.LogLevelInfo), fmt.Sprintf("Preflight: %d/%d tasks remaining", event.Preflight.RemainingCount, event.Preflight.TotalTasks))
@@ -640,6 +643,71 @@ func (m *Model) clearActiveFlags() {
 			m.phases[phaseIdx].Tasks[taskIdx].Active = false
 		}
 	}
+}
+
+// reloadTasks reloads tasks from the plan file and updates the model
+// This should be called when the plan file has been modified externally
+func (m *Model) reloadTasks() {
+	planInfo := loadTasksForMode(m.projectMode)
+	if planInfo.Filename == "" {
+		m.addLog(string(loop.LogLevelWarn), "Could not reload tasks - no plan file found")
+		return
+	}
+
+	// Build a map of completed tasks from current in-memory state
+	// This catches tasks that AI just completed but plan file hasn't been updated yet
+	completedInMemory := make(map[string]bool)
+	for _, task := range m.tasks {
+		if task.Completed {
+			completedInMemory[task.Text] = true
+		}
+	}
+	for _, phase := range m.phases {
+		for _, task := range phase.Tasks {
+			if task.Completed {
+				completedInMemory[task.Text] = true
+			}
+		}
+	}
+
+	// Update tasks - merge plan file status with in-memory status
+	m.tasks = make([]Task, len(planInfo.Tasks))
+	for i, task := range planInfo.Tasks {
+		m.tasks[i] = Task{
+			Text:      task.Text,
+			Completed: task.Completed || completedInMemory[task.Text],
+			Active:    false,
+		}
+	}
+
+	// Update phases - merge plan file status with in-memory status
+	m.phases = make([]Phase, len(planInfo.Phases))
+	for i, phase := range planInfo.Phases {
+		m.phases[i].Name = phase.Name
+		m.phases[i].Tasks = make([]Task, len(phase.Tasks))
+		for j, task := range phase.Tasks {
+			m.phases[i].Tasks[j] = Task{
+				Text:      task.Text,
+				Completed: task.Completed || completedInMemory[task.Text],
+				Active:    false,
+			}
+		}
+		// Update phase completion status
+		allComplete := true
+		for _, task := range m.phases[i].Tasks {
+			if !task.Completed {
+				allComplete = false
+				break
+			}
+		}
+		m.phases[i].Completed = allComplete
+	}
+
+	// Update current phase
+	m.currentPhase = findFirstIncompletePhase(m.phases)
+	m.planFile = planInfo.Filename
+
+	m.addLog(string(loop.LogLevelInfo), fmt.Sprintf("Reloaded %d tasks from %s", len(planInfo.Tasks), planInfo.Filename))
 }
 
 // updatePhaseCompletion checks and updates phase completion status

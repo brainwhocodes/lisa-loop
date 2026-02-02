@@ -50,20 +50,20 @@ type LoopEvent struct {
 	ToolStatus    ToolStatus
 
 	// Analysis result fields (from RALPH_STATUS block)
-	AnalysisStatus     string  // WORKING, COMPLETE, BLOCKED
-	CurrentTask        string  // Current task being worked on or just completed
-	TasksCompleted     int     // Tasks completed this loop
-	FilesModified      int     // Files modified this loop
-	TestsStatus        string  // PASSING, FAILING, UNKNOWN
-	ExitSignal         bool    // Whether exit was signaled
-	ConfidenceScore    float64 // Confidence in completion (0-1)
+	AnalysisStatus  string  // WORKING, COMPLETE, BLOCKED
+	CurrentTask     string  // Current task being worked on or just completed
+	TasksCompleted  int     // Tasks completed this loop
+	FilesModified   int     // Files modified this loop
+	TestsStatus     string  // PASSING, FAILING, UNKNOWN
+	ExitSignal      bool    // Whether exit was signaled
+	ConfidenceScore float64 // Confidence in completion (0-1)
 
 	// Context tracking fields
-	ContextUsagePercent  float64 // Current context window usage (0-1)
-	ContextTotalTokens   int     // Total tokens used
-	ContextLimit         int     // Context window limit
-	ContextThreshold     bool    // True if threshold reached
-	ContextWasCompacted  bool    // True if OpenCode compacted the session
+	ContextUsagePercent float64 // Current context window usage (0-1)
+	ContextTotalTokens  int     // Total tokens used
+	ContextLimit        int     // Context window limit
+	ContextThreshold    bool    // True if threshold reached
+	ContextWasCompacted bool    // True if OpenCode compacted the session
 
 	// Preflight summary
 	Preflight *PreflightSummary
@@ -88,6 +88,7 @@ type EventCallback func(event LoopEvent)
 // Controller manages the main Lisa loop
 type Controller struct {
 	config        ControllerConfig
+	cfg           Config
 	rateLimiter   *RateLimiter
 	breaker       *circuit.Breaker
 	runner        runner.Runner
@@ -96,13 +97,14 @@ type Controller struct {
 	shouldStop    bool
 	eventCallback EventCallback
 	paused        bool
+	pauseCh       chan struct{} // Channel to signal resume
 	backend       string
 
 	// Cached plan state (refreshed each loop iteration)
-	cachedMode      ProjectMode
-	cachedPlanFile  string
-	cachedTasks     []string
-	cacheValid      bool
+	cachedMode     ProjectMode
+	cachedPlanFile string
+	cachedTasks    []string
+	cacheValid     bool
 }
 
 // ControllerConfig holds configuration for the loop controller
@@ -123,6 +125,7 @@ func NewController(cfg Config, rateLimiter *RateLimiter, breaker *circuit.Breake
 			MaxDuration:   time.Duration(cfg.Timeout) * time.Second,
 			CheckInterval: 5 * time.Second,
 		},
+		cfg:           cfg,
 		rateLimiter:   rateLimiter,
 		breaker:       breaker,
 		runner:        r,
@@ -131,6 +134,7 @@ func NewController(cfg Config, rateLimiter *RateLimiter, breaker *circuit.Breake
 		shouldStop:    false,
 		eventCallback: nil,
 		paused:        false,
+		pauseCh:       make(chan struct{}),
 		backend:       cfg.Backend,
 	}
 
@@ -138,6 +142,12 @@ func NewController(cfg Config, rateLimiter *RateLimiter, breaker *circuit.Breake
 	r.SetOutputCallback(func(event runner.Event) {
 		c.handleCodexEvent(codex.Event(event))
 	})
+
+	// Clear any existing session to start fresh
+	if err := r.Stop(); err != nil {
+		// Log but don't fail - session might not exist
+		fmt.Printf("Warning: failed to stop runner on init: %v\n", err)
+	}
 
 	return c
 }
@@ -246,34 +256,40 @@ func (c *Controller) emitPreflight(summary *PreflightSummary) {
 // emitOutcome sends a loop outcome event
 func (c *Controller) emitOutcome(outcome *LoopOutcome) {
 	c.emit(LoopEvent{
-		Type:     EventTypeOutcome,
-		Outcome:  outcome,
+		Type:    EventTypeOutcome,
+		Outcome: outcome,
 	})
 }
 
 // emitContextUsage sends context window usage event
 func (c *Controller) emitContextUsage(usagePercent float64, totalTokens, limit int, thresholdReached, wasCompacted bool) {
 	c.emit(LoopEvent{
-		Type:                 EventTypeContextUsage,
-		LoopNumber:           c.loopNum,
-		ContextUsagePercent:  usagePercent,
-		ContextTotalTokens:   totalTokens,
-		ContextLimit:         limit,
-		ContextThreshold:     thresholdReached,
-		ContextWasCompacted:  wasCompacted,
+		Type:                EventTypeContextUsage,
+		LoopNumber:          c.loopNum,
+		ContextUsagePercent: usagePercent,
+		ContextTotalTokens:  totalTokens,
+		ContextLimit:        limit,
+		ContextThreshold:    thresholdReached,
+		ContextWasCompacted: wasCompacted,
 	})
 }
 
 // Pause pauses the loop
 func (c *Controller) Pause() {
-	c.paused = true
-	c.emitLog(LogLevelInfo, "Loop paused")
+	if !c.paused {
+		c.paused = true
+		c.emitLog(LogLevelInfo, "Loop paused")
+	}
 }
 
 // Resume resumes the loop
 func (c *Controller) Resume() {
-	c.paused = false
-	c.emitLog(LogLevelInfo, "Loop resumed")
+	if c.paused {
+		c.paused = false
+		close(c.pauseCh)
+		c.pauseCh = make(chan struct{})
+		c.emitLog(LogLevelInfo, "Loop resumed")
+	}
 }
 
 // IsPaused returns whether the loop is paused
@@ -292,10 +308,16 @@ func (c *Controller) Run(ctx stdcontext.Context) error {
 	c.emitUpdate("starting")
 
 	for {
-		// Check if paused
+		// Check if paused - wait for resume or context cancellation
 		if c.paused {
-			time.Sleep(100 * time.Millisecond)
-			continue
+			select {
+			case <-c.pauseCh:
+				// Resumed
+			case <-ctx.Done():
+				c.emitLog(LogLevelWarn, "Loop cancelled while paused")
+				c.emitUpdate("cancelled")
+				return ctx.Err()
+			}
 		}
 
 		if c.shouldStop {
@@ -320,6 +342,14 @@ func (c *Controller) Run(ctx stdcontext.Context) error {
 				c.emitLog(LogLevelInfo, fmt.Sprintf("Skipped: %s", preflight.SkipReason))
 				c.emitUpdate("skipped")
 				c.shouldStop = true
+
+				// Emit outcome event so TUI knows we're done
+				c.emitOutcome(&LoopOutcome{
+					Success:        true,
+					ExitSignal:     true,
+					TasksCompleted: preflight.TotalTasks - preflight.RemainingCount,
+				})
+
 				return nil
 			}
 
@@ -343,6 +373,12 @@ func (c *Controller) Run(ctx stdcontext.Context) error {
 				c.emitLog(LogLevelSuccess, fmt.Sprintf("Lisa Codex loop complete after %d iterations", c.loopNum))
 				c.emitUpdate("complete")
 				return nil
+			}
+
+			// Clear session after each successful iteration to prevent context bloat
+			c.emitLog(LogLevelInfo, "Clearing session for next iteration...")
+			if err := c.runner.Stop(); err != nil {
+				c.emitLog(LogLevelWarn, fmt.Sprintf("Failed to clear session: %v", err))
 			}
 
 			c.loopNum++
@@ -442,12 +478,6 @@ func (c *Controller) RunPreflight() (*PreflightSummary, bool) {
 
 // ExecuteLoop executes a single loop iteration
 func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
-	// Check if paused
-	if c.paused {
-		time.Sleep(100 * time.Millisecond)
-		return nil
-	}
-
 	c.emitUpdate("executing")
 
 	// Check rate limit
@@ -503,10 +533,7 @@ func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
 	promptWithContext := InjectContext(prompt, loopContext)
 
 	// Execute runner (Codex CLI or OpenCode)
-	backendName := "Codex"
-	if c.backend == "opencode" {
-		backendName = "OpenCode"
-	}
+	backendName := c.cfg.BackendDisplayName()
 	c.emitLog(LogLevelInfo, fmt.Sprintf("Loop %d: Executing %s", c.loopNum+1, backendName))
 	c.emitUpdate("codex_running")
 	c.emitCodexOutput(fmt.Sprintf("Starting %s execution (loop %d)...", backendName, c.loopNum+1), OutputTypeRaw)
@@ -608,7 +635,7 @@ func (c *Controller) ExecuteLoop(ctx stdcontext.Context) error {
 
 	// Emit outcome event for success case
 	outcome := &LoopOutcome{
-		Success:   true,
+		Success:    true,
 		ExitSignal: c.shouldStop,
 	}
 	if analysisResult != nil && analysisResult.Status != nil {
@@ -732,6 +759,9 @@ func (c *Controller) handleCodexEvent(event codex.Event) {
 	// Debug: log parsed type
 	if parsed.Text != "" || parsed.ToolName != "" {
 		c.emitLog(LogLevelDebug, fmt.Sprintf("Parsed: type=%s text=%d chars", parsed.Type, len(parsed.Text)))
+		if parsed.Text != "" {
+			c.emitLog(LogLevelDebug, fmt.Sprintf("Message: %s", parsed.Text))
+		}
 	}
 
 	// Emit based on parsed event type

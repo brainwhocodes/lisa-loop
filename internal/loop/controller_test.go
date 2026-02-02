@@ -309,7 +309,7 @@ func TestRateLimiter_RecordSuccessfulCall(t *testing.T) {
 	os.WriteFile("PROMPT.md", []byte("Test"), 0644)
 
 	// Create state files for rate limiter
-	os.MkdirAll(filepath.Join(tmpDir, ".ralph"), 0755)
+	os.MkdirAll(filepath.Join(tmpDir, ".lisa"), 0755)
 
 	rateLimiter := NewRateLimiter(10, 1)
 	// Initial state
@@ -325,5 +325,52 @@ func TestRateLimiter_RecordSuccessfulCall(t *testing.T) {
 
 	if rateLimiter.CallsMade() != 1 {
 		t.Errorf("After RecordCall, CallsMade = %d, want 1", rateLimiter.CallsMade())
+	}
+}
+
+func TestHandleCodexEvent_LogsMessageContent(t *testing.T) {
+	rateLimiter := NewRateLimiter(10, 1)
+	breaker := circuit.NewBreaker(3, 5)
+
+	cfg := Config{
+		MaxCalls: 5,
+		Backend:  "cli",
+	}
+
+	controller := NewController(cfg, rateLimiter, breaker)
+
+	// Capture log events
+	var logMessages []string
+	controller.SetEventCallback(func(event LoopEvent) {
+		if event.Type == EventTypeLog {
+			logMessages = append(logMessages, event.LogMessage)
+		}
+	})
+
+	// Create a test event with message content
+	testEvent := map[string]interface{}{
+		"type":    "message",
+		"content": "Hello, this is a test message",
+	}
+
+	controller.handleCodexEvent(testEvent)
+
+	// Verify that both log messages were emitted
+	foundParsed := false
+	foundMessage := false
+	for _, msg := range logMessages {
+		if msg == "Parsed: type=message text=29 chars" {
+			foundParsed = true
+		}
+		if msg == "Message: Hello, this is a test message" {
+			foundMessage = true
+		}
+	}
+
+	if !foundParsed {
+		t.Errorf("Expected 'Parsed: type=message text=29 chars' log message, got: %v", logMessages)
+	}
+	if !foundMessage {
+		t.Errorf("Expected 'Message: Hello, this is a test message' log message, got: %v", logMessages)
 	}
 }

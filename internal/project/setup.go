@@ -169,7 +169,7 @@ func createTemplateFiles(projectPath, templateDir string, skipFiles map[string]b
 
 	// Default template directory
 	if templateDir == "" {
-		templateDir = "~/.ralph/templates"
+		templateDir = "~/.lisa/templates"
 	}
 
 	// Expand ~ to home directory
@@ -243,7 +243,7 @@ func initGitRepo(projectPath string) error {
 	// Create .gitignore
 	gitignorePath := filepath.Join(projectPath, ".gitignore")
 	gitignoreContent := `# Lisa Codex
-.ralph_session
+.lisa_session
 .circuit_breaker_state
 .exit_signals
 .call_count
@@ -267,7 +267,7 @@ Thumbs.db
 	}
 
 	// Initial commit
-	cmd = fmt.Sprintf("cd %s && git add . && git commit -m 'Initial commit from ralph-setup'", projectPath)
+	cmd = fmt.Sprintf("cd %s && git add . && git commit -m 'Initial commit from lisa-setup'", projectPath)
 	if err := executeCommand(cmd); err != nil {
 		return err
 	}
@@ -288,11 +288,11 @@ func createREADME(path, projectName string) error {
 	builder.WriteString("## Running Lisa\n\n")
 	builder.WriteString("To start the autonomous development loop:\n\n")
 	builder.WriteString("```bash\n")
-	builder.WriteString("ralph\n")
+	builder.WriteString("lisa\n")
 	builder.WriteString("```\n\n")
 	builder.WriteString("With monitoring dashboard:\n\n")
 	builder.WriteString("```bash\n")
-	builder.WriteString("ralph --monitor\n")
+	builder.WriteString("lisa --monitor\n")
 	builder.WriteString("```\n\n")
 	builder.WriteString("## Project Structure\n\n")
 	builder.WriteString("- src/ - Source code\n")
@@ -369,20 +369,20 @@ func defaultPromptTemplate() string {
 	builder.WriteString("3. Run tests after each change\n")
 	builder.WriteString("4. Commit your work regularly with clear messages\n")
 	builder.WriteString("5. **UPDATE THE PLAN FILE** when you complete a task - change `- [ ]` to `- [x]`\n")
-	builder.WriteString("6. **IMPORTANT**: Always output a RALPH_STATUS block at the end of your response\n\n")
+	builder.WriteString("6. **IMPORTANT**: Always output a LISA_STATUS block at the end of your response\n\n")
 	builder.WriteString("## Task Completion Workflow\n\n")
 	builder.WriteString("When you complete a task:\n")
 	builder.WriteString("1. Edit the plan file to mark the task complete: `- [ ] Task` → `- [x] Task`\n")
 	builder.WriteString("2. Run tests to verify your changes\n")
 	builder.WriteString("3. Commit your changes\n")
-	builder.WriteString("4. Output RALPH_STATUS with accurate TASKS_COMPLETED_THIS_LOOP count\n")
+	builder.WriteString("4. Output LISA_STATUS with accurate TASKS_COMPLETED_THIS_LOOP count\n")
 	builder.WriteString("5. If ALL tasks are now marked [x], set EXIT_SIGNAL: true\n\n")
 	builder.WriteString("## Tech Stack\n\n")
 	builder.WriteString("[List your technologies here]\n\n")
 	builder.WriteString("## Status Reporting (REQUIRED)\n\n")
-	builder.WriteString("You MUST end every response with a RALPH_STATUS block. This tells Lisa whether to continue or stop.\n\n")
+	builder.WriteString("You MUST end every response with a LISA_STATUS block. This tells Lisa whether to continue or stop.\n\n")
 	builder.WriteString("```\n")
-	builder.WriteString("---RALPH_STATUS---\n")
+	builder.WriteString("---LISA_STATUS---\n")
 	builder.WriteString("STATUS: WORKING | COMPLETE | BLOCKED\n")
 	builder.WriteString("TASKS_COMPLETED_THIS_LOOP: <number>\n")
 	builder.WriteString("FILES_MODIFIED: <number>\n")
@@ -390,7 +390,7 @@ func defaultPromptTemplate() string {
 	builder.WriteString("WORK_TYPE: feature | bugfix | test | docs | refactor\n")
 	builder.WriteString("EXIT_SIGNAL: true | false\n")
 	builder.WriteString("RECOMMENDATION: <brief next step or 'none'>\n")
-	builder.WriteString("---END_RALPH_STATUS---\n")
+	builder.WriteString("---END_LISA_STATUS---\n")
 	builder.WriteString("```\n\n")
 	builder.WriteString("### When to set EXIT_SIGNAL: true\n\n")
 	builder.WriteString("- All tasks in @fix_plan.md are marked [x] complete\n")
@@ -409,7 +409,7 @@ func defaultFixPlanTemplate() string {
 	builder := &strings.Builder{}
 	builder.WriteString("# Lisa Development Task List\n\n")
 	builder.WriteString("**IMPORTANT**: Mark tasks complete by changing `- [ ]` to `- [x]` as you finish them.\n")
-	builder.WriteString("When ALL tasks are marked [x], set EXIT_SIGNAL: true in your RALPH_STATUS block.\n\n")
+	builder.WriteString("When ALL tasks are marked [x], set EXIT_SIGNAL: true in your LISA_STATUS block.\n\n")
 	builder.WriteString("## Phase 1: Initial Setup\n")
 	builder.WriteString("- [ ] Create project structure\n")
 	builder.WriteString("- [ ] Set up development environment\n")
@@ -451,7 +451,7 @@ func defaultAgentTemplate() string {
 	builder.WriteString("3. Build the project\n")
 	builder.WriteString("4. Update @fix_plan.md (mark completed tasks with [x])\n")
 	builder.WriteString("5. Commit changes\n")
-	builder.WriteString("6. **Output RALPH_STATUS block** (see PROMPT.md for format)\n\n")
+	builder.WriteString("6. **Output LISA_STATUS block** (see PROMPT.md for format)\n\n")
 	builder.WriteString("## Completion Checklist\n\n")
 	builder.WriteString("Before setting EXIT_SIGNAL: true, verify:\n")
 	builder.WriteString("- [ ] All tasks in @fix_plan.md are marked [x]\n")

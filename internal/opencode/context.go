@@ -139,15 +139,15 @@ func (ct *ContextTracker) Reset() {
 
 // SessionArchive represents a saved session
 type SessionArchive struct {
-	SessionID        string        `json:"session_id"`
-	ModelID          string        `json:"model_id"`
-	PromptTokens     int           `json:"prompt_tokens"`
-	CompletionTokens int           `json:"completion_tokens"`
-	LoopNumber       int           `json:"loop_number"`
-	SavedAt          time.Time     `json:"saved_at"`
-	Reason           string        `json:"reason"` // "threshold", "compacted", "manual"
-	Summary          string        `json:"summary,omitempty"`
-	Tasks            []TaskStatus  `json:"tasks,omitempty"`
+	SessionID        string       `json:"session_id"`
+	ModelID          string       `json:"model_id"`
+	PromptTokens     int          `json:"prompt_tokens"`
+	CompletionTokens int          `json:"completion_tokens"`
+	LoopNumber       int          `json:"loop_number"`
+	SavedAt          time.Time    `json:"saved_at"`
+	Reason           string       `json:"reason"` // "threshold", "compacted", "manual"
+	Summary          string       `json:"summary,omitempty"`
+	Tasks            []TaskStatus `json:"tasks,omitempty"`
 }
 
 // TaskStatus represents a task's completion status
@@ -163,7 +163,7 @@ type SessionArchiver struct {
 
 // NewSessionArchiver creates a new archiver with the given directory
 func NewSessionArchiver(projectDir string) *SessionArchiver {
-	archiveDir := filepath.Join(projectDir, ".ralph", "sessions")
+	archiveDir := filepath.Join(projectDir, ".lisa", "sessions")
 	return &SessionArchiver{archiveDir: archiveDir}
 }
 

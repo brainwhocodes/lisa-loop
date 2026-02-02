@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/brainwhocodes/lisa-loop/internal/config"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -458,17 +459,8 @@ func (m Model) renderTaskLine(task Task, index int, maxWidth int) string {
 
 // backendDisplayName returns a display-friendly name for the backend
 func (m Model) backendDisplayName() string {
-	switch m.backend {
-	case "opencode":
-		return "OpenCode"
-	case "cli":
-		return "Codex CLI"
-	default:
-		if m.backend != "" {
-			return m.backend
-		}
-		return "agent"
-	}
+	cfg := config.Config{Backend: m.backend}
+	return cfg.BackendDisplayName()
 }
 
 // renderOutputPane renders the output pane with live agent output
