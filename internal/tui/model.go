@@ -531,6 +531,8 @@ func (m *Model) addLog(level, message string) {
 
 // addOutputLine adds a line to the output buffer with deduplication
 func (m *Model) addOutputLine(line, lineType string) {
+	line = decodeEscapes(line)
+
 	// Initialize map if needed
 	if m.seenMessages == nil {
 		m.seenMessages = make(map[string]bool)
@@ -585,6 +587,8 @@ func (m *Model) addOutputLine(line, lineType string) {
 
 // addReasoningLine replaces reasoning (SSE sends cumulative text, not deltas)
 func (m *Model) addReasoningLine(line string) {
+	line = decodeEscapes(line)
+
 	// Skip if same as current reasoning
 	if line == m.currentReasoning {
 		return

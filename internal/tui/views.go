@@ -478,6 +478,8 @@ func (m Model) renderOutputPane(width, height int) string {
 	if len(m.reasoningLines) > 0 {
 		// Get the latest reasoning (last line only to avoid clutter)
 		latestReasoning := m.reasoningLines[len(m.reasoningLines)-1]
+		// Reasoning can be multi-line; keep it compact in split view.
+		latestReasoning = strings.ReplaceAll(latestReasoning, "\n", " ")
 		// Truncate if too long
 		if len(latestReasoning) > width-20 {
 			latestReasoning = latestReasoning[:width-23] + "..."
@@ -491,15 +493,26 @@ func (m Model) renderOutputPane(width, height int) string {
 	if len(m.outputLines) == 0 && len(m.reasoningLines) == 0 {
 		lines = append(lines, StyleTextMuted.Render(fmt.Sprintf(" Waiting for %s output...", m.backendDisplayName())))
 	} else if len(m.outputLines) > 0 {
-		// Show most recent output lines that fit
-		maxLines := height - reasoningHeight - 2
-		start := 0
-		if len(m.outputLines) > maxLines {
-			start = len(m.outputLines) - maxLines
+		// Flatten multi-line output entries so escaped newlines render as actual lines.
+		var flat []string
+		for _, ol := range m.outputLines {
+			for _, l := range strings.Split(ol, "\n") {
+				flat = append(flat, l)
+			}
 		}
 
-		for i := start; i < len(m.outputLines); i++ {
-			line := m.outputLines[i]
+		// Show most recent output lines that fit.
+		maxLines := height - reasoningHeight - 2
+		if maxLines < 1 {
+			maxLines = 1
+		}
+		start := 0
+		if len(flat) > maxLines {
+			start = len(flat) - maxLines
+		}
+
+		for i := start; i < len(flat); i++ {
+			line := flat[i]
 			// Truncate long lines
 			if len(line) > width-4 {
 				line = line[:width-7] + "..."

@@ -304,11 +304,6 @@ func (r *Runner) Stop() error {
 
 // handleSSEEvent parses SSE events and emits them in TUI-compatible format
 func (r *Runner) handleSSEEvent(sessionID string, event SSEEvent) {
-	// Debug: log all received SSE events
-	r.emitEvent("message", map[string]interface{}{
-		"content": fmt.Sprintf("SSE received: %s", event.Type),
-	})
-
 	switch event.Type {
 	case "message.part.updated":
 		var props PartUpdatedProps
