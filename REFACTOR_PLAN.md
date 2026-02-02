@@ -42,16 +42,16 @@ Rendering:
 
 IO & side effects:
 - Plan file read/parsing:
-  - `internal/tui/program.go` reads plan files via `os.ReadFile` (in `loadTasksForMode` / `parsePhasesFromData`).
+  - `internal/tui/program.go` reads plan files via `os.ReadFile` (in `loadTasksForMode`) and parses via `internal/tui/plan`.
   - `Model.reloadTasks()` calls `loadTasksForMode(...)` directly from `Update` (filesystem IO in `Update`).
 - Loop execution:
-  - `r` key starts controller by creating a context and spawning a goroutine (`go m.runController()`).
+  - `r` key starts controller by creating a context and returning a `tea.Cmd` (see `internal/tui/effects`).
 - Logging: appended to `m.logs` with a max length cap.
 
 Concurrency:
 - `tea.Tick` drives animation; Bubble Tea calls `Update` serially.
 - Controller callbacks call `program.Send` from controller goroutines (expected).
-- Risk: `runController()` currently mutates `m.state` / `m.err` from a goroutine (outside `Update`) which is a data race and violates the Bubble Tea update model.
+- Note: controller execution now runs via `tea.Cmd` and reports completion via an explicit message; model mutation stays in `Update`.
 - Note: the help screen copy in `internal/tui/keybindings.go` includes backend/options text that may not match the current CLI flags; treat copy changes as a bug fix (and lock down with tests) if updated.
 
 ## Refactor Targets (Preferred Architecture)
@@ -93,7 +93,7 @@ Stability rules:
 - Rendering diffs:
   - Extracting view components can subtly change spacing/truncation; add targeted snapshot-ish tests for stable sections (header/footer/status) with fixed widths.
 - Plan parsing:
-  - `parsePhasesFromData` supports multiple plan formats; refactor must preserve header detection and task extraction rules.
+  - `plan.ParsePhases` supports multiple plan formats; refactor must preserve header detection and task extraction rules.
 - Dedup logic:
   - SSE cumulative output handling (`currentMessage`, `currentReasoning`, `seenMessages`) is easy to regress; add tests around these reducers before altering.
 

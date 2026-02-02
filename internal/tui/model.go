@@ -14,20 +14,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Task represents a task from @fix_plan.md
-type Task struct {
-	Text      string
-	Completed bool
-	Active    bool // Currently being worked on
-}
-
-// Phase represents a group of tasks (matches tui/program.go Phase)
-type Phase struct {
-	Name      string
-	Tasks     []Task
-	Completed bool
-}
-
 // ViewMode represents the current view mode
 type ViewMode string
 
