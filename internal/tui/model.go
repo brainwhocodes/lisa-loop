@@ -41,6 +41,7 @@ type Model struct {
 	activity      string           // Current activity description
 	controller    Controller
 	readFile      effects.ReadFile // Injected for testability; defaults to effects.OSReadFile
+	exec          effects.Exec     // Injected for testability; defaults to effects.OSExec
 	ctx           context.Context
 	cancel        context.CancelFunc
 	activeTaskIdx int // Index of currently active task (-1 if none)
@@ -63,6 +64,14 @@ type Model struct {
 
 	assistantMsgSeq       int
 	assistantCurrentMsgID string
+
+	// Diff state (tool hints + git truth)
+	diffSeq           int
+	diffPending       bool
+	diffErr           error
+	gitDiffNameStatus string
+	gitDiffPatch      string
+	pendingChanges    map[string]pendingChange
 
 	// Analysis results (from RALPH_STATUS block)
 	analysisStatus  string  // WORKING, COMPLETE, BLOCKED
@@ -275,6 +284,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.lastToolCall = toolID
 			m.currentTool = event.ToolName
+
+			// Record file touches as "pending changes" for immediate diff UX.
+			if looksLikeFileTarget(event.ToolTarget) {
+				if m.pendingChanges == nil {
+					m.pendingChanges = make(map[string]pendingChange)
+				}
+				pc := pendingChange{
+					Path:      event.ToolTarget,
+					Tool:      event.ToolName,
+					Status:    string(event.ToolStatus),
+					UpdatedAt: time.Now(),
+				}
+				m.pendingChanges[event.ToolTarget] = pc
+
+				// Debounce git diff refresh on write-like tools finishing.
+				if event.ToolStatus != loop.ToolStatusStarted && isDiffRelevantTool(event.ToolName) {
+					cmds = append(cmds, m.triggerDiffRefresh())
+				}
+			}
+
 			if event.ToolStatus == loop.ToolStatusStarted {
 				m.addOutputLine(fmt.Sprintf("> %s %s...", event.ToolName, event.ToolTarget), "tool_call")
 			} else {
@@ -349,6 +378,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.totalTasksCompleted += event.Outcome.TasksCompleted
 					m.addLog(string(loop.LogLevelInfo), fmt.Sprintf("Loop outcome: %d tasks completed, %d files modified",
 						event.Outcome.TasksCompleted, event.Outcome.FilesModified))
+					if event.Outcome.FilesModified > 0 {
+						cmds = append(cmds, m.triggerDiffRefresh())
+					}
 				} else {
 					m.addLog(string(loop.LogLevelError), fmt.Sprintf("Loop failed: %s", event.Outcome.Error))
 				}
@@ -359,6 +391,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if len(cmds) > 1 {
 			return m, tea.Batch(cmds...)
+		}
+		return m, nil
+
+	case tuimsg.DiffDebounceFiredMsg:
+		if msg.Seq != m.diffSeq {
+			return m, nil
+		}
+		return m, effects.LoadGitDiff(msg.Seq, m.exec)
+
+	case tuimsg.GitDiffLoadedMsg:
+		if msg.Seq != m.diffSeq {
+			return m, nil
+		}
+		m.diffPending = false
+		m.diffErr = msg.Err
+		if msg.Err == nil {
+			m.gitDiffNameStatus = msg.NameStatus
+			m.gitDiffPatch = msg.Patch
+			// Mark pending file touches as verified.
+			for k, v := range m.pendingChanges {
+				v.Verified = true
+				m.pendingChanges[k] = v
+			}
+		} else {
+			m.addLog(string(loop.LogLevelWarn), fmt.Sprintf("git diff unavailable: %v", msg.Err))
 		}
 		return m, nil
 
@@ -589,6 +646,12 @@ func (m *Model) appendTranscriptLine(body, lineType string) {
 		Title: title,
 		Body:  body,
 	})
+}
+
+func (m *Model) triggerDiffRefresh() tea.Cmd {
+	m.diffSeq++
+	m.diffPending = true
+	return effects.DebounceDiff(m.diffSeq, 400*time.Millisecond)
 }
 
 // updateActiveTask updates the active task based on loop progress

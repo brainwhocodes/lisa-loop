@@ -52,6 +52,20 @@ type PlanLoadedMsg struct {
 	Err      error
 }
 
+// DiffDebounceFiredMsg is emitted after a debounce interval and triggers a git diff refresh.
+type DiffDebounceFiredMsg struct {
+	Seq int
+}
+
+// GitDiffLoadedMsg is emitted when git diff output has been collected.
+type GitDiffLoadedMsg struct {
+	Seq        int
+	NameStatus string
+	Patch      string
+	Err        error
+	At         time.Time
+}
+
 // CodexOutputMsg represents a line of output from a backend stream.
 type CodexOutputMsg struct {
 	Line string

@@ -88,6 +88,7 @@ func NewProgram(config codex.Config, controller *loop.Controller, explicitMode .
 		activity:       "",
 		controller:     controller,
 		readFile:       effects.OSReadFile,
+		exec:           effects.OSExec,
 		md:             markdown.New(),
 		transcript:     transcript.New(500),
 		activeTaskIdx:  -1,
