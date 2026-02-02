@@ -10,6 +10,7 @@ import (
 	"github.com/brainwhocodes/lisa-loop/internal/loop"
 	"github.com/brainwhocodes/lisa-loop/internal/tui/effects"
 	tuimsg "github.com/brainwhocodes/lisa-loop/internal/tui/msg"
+	"github.com/brainwhocodes/lisa-loop/internal/tui/view"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -718,7 +719,7 @@ func (m Model) View() string {
 	// Show error view if there's an error
 	if m.err != nil && m.screen != ScreenHelp {
 		content := m.renderErrorView()
-		return m.padToFullScreen(content, width, height)
+		return view.PadToFullScreen(content, width, height, Pepper)
 	}
 
 	// Get content based on screen
@@ -740,35 +741,7 @@ func (m Model) View() string {
 	}
 
 	// Pad content to fill entire screen
-	return m.padToFullScreen(content, width, height)
-}
-
-// padToFullScreen pads content to fill the entire terminal
-func (m Model) padToFullScreen(content string, width, height int) string {
-	lines := strings.Split(content, "\n")
-
-	// Pad each line to full width
-	var paddedLines []string
-	for _, line := range lines {
-		lineLen := lipgloss.Width(line)
-		if lineLen < width {
-			line = line + strings.Repeat(" ", width-lineLen)
-		}
-		paddedLines = append(paddedLines, line)
-	}
-
-	// Add empty lines to fill height
-	for len(paddedLines) < height {
-		paddedLines = append(paddedLines, strings.Repeat(" ", width))
-	}
-
-	// Apply background color to entire output (Charmtone Pepper)
-	result := strings.Join(paddedLines[:height], "\n")
-	return lipgloss.NewStyle().
-		Width(width).
-		Height(height).
-		Background(Pepper).
-		Render(result)
+	return view.PadToFullScreen(content, width, height, Pepper)
 }
 
 func (m Model) renderRateLimitProgress() string {
