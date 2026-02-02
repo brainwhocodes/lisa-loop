@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/brainwhocodes/lisa-loop/internal/loop"
+	"github.com/brainwhocodes/lisa-loop/internal/tui/msg"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -118,7 +119,7 @@ func TestReasoningDedup_ReplacesCumulativeReasoning(t *testing.T) {
 func TestToolDedup_DoesNotAppendDuplicateToolCall(t *testing.T) {
 	model := Model{}
 
-	start := CodexToolCallMsg{Tool: "read", Target: "file.txt", Status: "started"}
+	start := msg.CodexToolCallMsg{Tool: "read", Target: "file.txt", Status: "started"}
 	newModel, _ := model.Update(start)
 	newModel, _ = newModel.(Model).Update(start) // duplicate
 

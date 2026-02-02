@@ -11,6 +11,7 @@ import (
 
 	"github.com/brainwhocodes/lisa-loop/internal/codex"
 	"github.com/brainwhocodes/lisa-loop/internal/loop"
+	"github.com/brainwhocodes/lisa-loop/internal/tui/msg"
 )
 
 // Program wraps the Bubble Tea program
@@ -321,7 +322,7 @@ func (p *Program) Run() error {
 	// Set up controller event callback to send messages to the TUI
 	if p.controller != nil {
 		p.controller.SetEventCallback(func(event loop.LoopEvent) {
-			program.Send(ControllerEventMsg{Event: event})
+			program.Send(msg.ControllerEventMsg{Event: event})
 		})
 	}
 

@@ -26,8 +26,8 @@ Message flow:
   - view toggles (`l/t/o/?/c`) mutate `viewMode` and `activeView`
 - Loop/controller input:
   - `internal/tui/program.go` sets `controller.SetEventCallback(...)` and uses `program.Send(ControllerEventMsg{...})`.
-  - `Model.Update(ControllerEventMsg)` mutates UI state from loop events (status/logs/output/tool/analysis/preflight/outcome).
-- Animation: `Model.Init()` schedules `tea.Tick(...)`; `TickMsg` increments `m.tick` and re-schedules.
+  - `Model.Update(msg.ControllerEventMsg)` mutates UI state from loop events (status/logs/output/tool/analysis/preflight/outcome).
+- Animation: `Model.Init()` schedules `tea.Tick(...)`; `msg.TickMsg` increments `m.tick` and re-schedules.
 
 Rendering:
 - `Model.View()` chooses a renderer based on `viewMode`, then pads to full screen and applies a global background.

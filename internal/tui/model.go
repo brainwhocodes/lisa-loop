@@ -7,68 +7,10 @@ import (
 	"time"
 
 	"github.com/brainwhocodes/lisa-loop/internal/loop"
+	tuimsg "github.com/brainwhocodes/lisa-loop/internal/tui/msg"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
-
-// State represents TUI state
-type State int
-
-const (
-	StateInitializing State = iota
-	StateRunning
-	StatePaused
-	StateComplete
-	StateError
-)
-
-func (s State) String() string {
-	switch s {
-	case StateInitializing:
-		return "Initializing"
-	case StateRunning:
-		return "Running"
-	case StatePaused:
-		return "Paused"
-	case StateComplete:
-		return "Complete"
-	case StateError:
-		return "Error"
-	default:
-		return "Unknown"
-	}
-}
-
-// LoopUpdateMsg is sent when loop controller updates
-type LoopUpdateMsg struct {
-	LoopNumber int
-	CallsUsed  int
-	Status     string
-}
-
-// LogMsg is sent to add a log entry
-type LogMsg struct {
-	Message string
-	Level   string // INFO, WARN, ERROR, SUCCESS
-}
-
-// StateChangeMsg is sent to change TUI state
-type StateChangeMsg struct {
-	State State
-}
-
-// StatusMsg is sent to update status text
-type StatusMsg struct {
-	Status string
-}
-
-// TickMsg is sent periodically for animations
-type TickMsg time.Time
-
-// ControllerEventMsg wraps events from the loop controller
-type ControllerEventMsg struct {
-	Event loop.LoopEvent
-}
 
 // Task represents a task from @fix_plan.md
 type Task struct {
@@ -173,7 +115,7 @@ type Model struct {
 func (m Model) Init() tea.Cmd {
 	// Start the tick timer for animations
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
-		return TickMsg(t)
+		return tuimsg.TickMsg(t)
 	})
 }
 
@@ -281,25 +223,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case LoopUpdateMsg:
+	case tuimsg.LoopUpdateMsg:
 		m.loopNumber = msg.LoopNumber
 		m.callsUsed = msg.CallsUsed
 		m.status = msg.Status
 		m.updateActiveTask()
 		return m, nil
 
-	case LogMsg:
+	case tuimsg.LogMsg:
 		m.addLog(msg.Level, msg.Message)
 		return m, nil
 
-	case StateChangeMsg:
+	case tuimsg.StateChangeMsg:
 		m.state = msg.State
 		if msg.State == StateComplete {
 			m.activeTaskIdx = -1
 		}
 		return m, nil
 
-	case StatusMsg:
+	case tuimsg.StatusMsg:
 		m.status = msg.Status
 		return m, nil
 
@@ -308,14 +250,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 
-	case TickMsg:
+	case tuimsg.TickMsg:
 		// Increment tick for animations
 		m.tick++
 		return m, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
-			return TickMsg(t)
+			return tuimsg.TickMsg(t)
 		})
 
-	case ControllerEventMsg:
+	case tuimsg.ControllerEventMsg:
 		event := msg.Event
 		switch event.Type {
 		case loop.EventTypeLoopUpdate:
@@ -410,15 +352,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case CodexOutputMsg:
+	case tuimsg.CodexOutputMsg:
 		m.addOutputLine(msg.Line, msg.Type)
 		return m, nil
 
-	case CodexReasoningMsg:
+	case tuimsg.CodexReasoningMsg:
 		m.addReasoningLine(msg.Text)
 		return m, nil
 
-	case CodexToolCallMsg:
+	case tuimsg.CodexToolCallMsg:
 		// Deduplicate tool calls
 		toolID := fmt.Sprintf("%s:%s:%s", msg.Tool, msg.Target, msg.Status)
 		if toolID == m.lastToolCall {
@@ -433,7 +375,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case TaskStartedMsg:
+	case tuimsg.TaskStartedMsg:
 		if msg.TaskIndex >= 0 && msg.TaskIndex < len(m.tasks) {
 			m.activeTaskIdx = msg.TaskIndex
 			m.tasks[msg.TaskIndex].Active = true
@@ -441,7 +383,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case TaskCompletedMsg:
+	case tuimsg.TaskCompletedMsg:
 		if msg.TaskIndex >= 0 && msg.TaskIndex < len(m.tasks) {
 			m.tasks[msg.TaskIndex].Completed = true
 			m.tasks[msg.TaskIndex].Active = false
@@ -449,7 +391,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case TaskFailedMsg:
+	case tuimsg.TaskFailedMsg:
 		if msg.TaskIndex >= 0 && msg.TaskIndex < len(m.tasks) {
 			m.tasks[msg.TaskIndex].Active = false
 			m.addLog(string(loop.LogLevelError), fmt.Sprintf("Failed: %s - %s", msg.TaskText, msg.Error))

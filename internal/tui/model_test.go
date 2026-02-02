@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brainwhocodes/lisa-loop/internal/tui/msg"
 	"github.com/charmbracelet/bubbletea"
 )
 
@@ -23,8 +24,8 @@ func TestModelTick(t *testing.T) {
 
 	// Send a few tick messages
 	for i := 0; i < 5; i++ {
-		msg := TickMsg(time.Now())
-		newModel, newCmd := model.Update(msg)
+		tickMsg := msg.TickMsg(time.Now())
+		newModel, newCmd := model.Update(tickMsg)
 		if newCmd == nil {
 			t.Fatal("Tick should return a command")
 		}
@@ -167,12 +168,12 @@ func TestModelLogMsg(t *testing.T) {
 		logs: []string{},
 	}
 
-	msg := LogMsg{
+	logMsg := msg.LogMsg{
 		Message: "Test message",
 		Level:   "INFO",
 	}
 
-	newModel, _ := model.Update(msg)
+	newModel, _ := model.Update(logMsg)
 
 	logs := newModel.(Model).logs
 	if len(logs) != 1 {
