@@ -51,6 +51,7 @@ type Model struct {
 	projectMode   loop.ProjectMode // Current project mode (implementation, refactor, fix)
 	activity      string           // Current activity description
 	controller    Controller
+	readFile      effects.ReadFile // Injected for testability; defaults to effects.OSReadFile
 	ctx           context.Context
 	cancel        context.CancelFunc
 	activeTaskIdx int // Index of currently active task (-1 if none)
@@ -330,8 +331,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.preflightShouldSkip = event.Preflight.ShouldSkip
 				m.preflightSkipReason = event.Preflight.SkipReason
 
-				// Reload tasks from plan file to sync with external changes
-				m.reloadTasks()
+				// Reload tasks from plan file to sync with external changes (via Cmd; no IO in Update).
+				planFile := event.Preflight.PlanFile
+				if planFile == "" {
+					planFile = m.planFile
+				}
+				if planFile == "" {
+					planFile = loop.GetPlanFileForMode(m.projectMode)
+				}
+				if planFile != "" {
+					cmds = append(cmds, effects.LoadPlan(planFile, m.readFile))
+				} else {
+					m.addLog(string(loop.LogLevelWarn), "Could not reload tasks - no plan file found")
+				}
 
 				// Log preflight info
 				m.addLog(string(loop.LogLevelInfo), fmt.Sprintf("Preflight: %d/%d tasks remaining", event.Preflight.RemainingCount, event.Preflight.TotalTasks))
@@ -353,6 +365,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		if len(cmds) == 1 {
+			return m, cmds[0]
+		}
+		if len(cmds) > 1 {
+			return m, tea.Batch(cmds...)
+		}
+		return m, nil
+
+	case tuimsg.PlanLoadedMsg:
+		if msg.Err != nil {
+			m.addLog(string(loop.LogLevelWarn), fmt.Sprintf("Could not reload tasks from %s: %v", msg.Filename, msg.Err))
+			return m, nil
+		}
+		m.applyLoadedPlan(msg.Filename, msg.Tasks, msg.Phases)
 		return m, nil
 
 	case tuimsg.ControllerDoneMsg:
@@ -604,17 +630,9 @@ func (m *Model) clearActiveFlags() {
 	}
 }
 
-// reloadTasks reloads tasks from the plan file and updates the model
-// This should be called when the plan file has been modified externally
-func (m *Model) reloadTasks() {
-	planInfo := loadTasksForMode(m.projectMode)
-	if planInfo.Filename == "" {
-		m.addLog(string(loop.LogLevelWarn), "Could not reload tasks - no plan file found")
-		return
-	}
-
-	// Build a map of completed tasks from current in-memory state
-	// This catches tasks that AI just completed but plan file hasn't been updated yet
+func (m *Model) applyLoadedPlan(filename string, tasks []Task, phases []Phase) {
+	// Build a map of completed tasks from current in-memory state.
+	// This catches tasks that the AI just completed but the plan file hasn't been updated yet.
 	completedInMemory := make(map[string]bool)
 	for _, task := range m.tasks {
 		if task.Completed {
@@ -629,9 +647,9 @@ func (m *Model) reloadTasks() {
 		}
 	}
 
-	// Update tasks - merge plan file status with in-memory status
-	m.tasks = make([]Task, len(planInfo.Tasks))
-	for i, task := range planInfo.Tasks {
+	// Update tasks - merge plan file status with in-memory status.
+	m.tasks = make([]Task, len(tasks))
+	for i, task := range tasks {
 		m.tasks[i] = Task{
 			Text:      task.Text,
 			Completed: task.Completed || completedInMemory[task.Text],
@@ -639,9 +657,9 @@ func (m *Model) reloadTasks() {
 		}
 	}
 
-	// Update phases - merge plan file status with in-memory status
-	m.phases = make([]Phase, len(planInfo.Phases))
-	for i, phase := range planInfo.Phases {
+	// Update phases - merge plan file status with in-memory status.
+	m.phases = make([]Phase, len(phases))
+	for i, phase := range phases {
 		m.phases[i].Name = phase.Name
 		m.phases[i].Tasks = make([]Task, len(phase.Tasks))
 		for j, task := range phase.Tasks {
@@ -651,7 +669,7 @@ func (m *Model) reloadTasks() {
 				Active:    false,
 			}
 		}
-		// Update phase completion status
+		// Update phase completion status.
 		allComplete := true
 		for _, task := range m.phases[i].Tasks {
 			if !task.Completed {
@@ -662,11 +680,12 @@ func (m *Model) reloadTasks() {
 		m.phases[i].Completed = allComplete
 	}
 
-	// Update current phase
 	m.currentPhase = findFirstIncompletePhase(m.phases)
-	m.planFile = planInfo.Filename
+	if filename != "" {
+		m.planFile = filename
+	}
 
-	m.addLog(string(loop.LogLevelInfo), fmt.Sprintf("Reloaded %d tasks from %s", len(planInfo.Tasks), planInfo.Filename))
+	m.addLog(string(loop.LogLevelInfo), fmt.Sprintf("Reloaded %d tasks from %s", len(tasks), filename))
 }
 
 // updatePhaseCompletion checks and updates phase completion status

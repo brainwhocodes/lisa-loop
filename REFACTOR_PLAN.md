@@ -43,7 +43,7 @@ Rendering:
 IO & side effects:
 - Plan file read/parsing:
   - `internal/tui/program.go` reads plan files via `os.ReadFile` (in `loadTasksForMode`) and parses via `internal/tui/plan`.
-  - `Model.reloadTasks()` calls `loadTasksForMode(...)` directly from `Update` (filesystem IO in `Update`).
+  - Plan reloads after preflight are performed via `tea.Cmd` in `internal/tui/effects` and applied via an explicit `msg.PlanLoadedMsg` (no filesystem IO in `Update`).
 - Loop execution:
   - `r` key starts controller by creating a context and returning a `tea.Cmd` (see `internal/tui/effects`).
 - Logging: appended to `m.logs` with a max length cap.

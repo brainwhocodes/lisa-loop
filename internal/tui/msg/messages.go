@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/brainwhocodes/lisa-loop/internal/loop"
+	"github.com/brainwhocodes/lisa-loop/internal/tui/plan"
 )
 
 // LoopUpdateMsg is sent when loop controller updates.
@@ -41,6 +42,14 @@ type ControllerEventMsg struct {
 // The controller itself continues to emit fine-grained progress via ControllerEventMsg.
 type ControllerDoneMsg struct {
 	Err error
+}
+
+// PlanLoadedMsg is sent when a plan file is loaded (or fails to load).
+type PlanLoadedMsg struct {
+	Filename string
+	Tasks    []plan.Task
+	Phases   []plan.Phase
+	Err      error
 }
 
 // CodexOutputMsg represents a line of output from a backend stream.
