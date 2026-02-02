@@ -714,10 +714,12 @@ func (m Model) renderOutputFullView() string {
 	content := m.renderOutputTabContent(width, contentHeight)
 
 	footer := StyleFooter.Width(width).Render(
-		fmt.Sprintf(" %s return%s%s tabs%s%s quit",
+		fmt.Sprintf(" %s return%s%s tabs%s%s reasoning%s%s quit",
 			StyleHelpKey.Render("o"),
 			StyleTextSubtle.Render(MetaDotSeparator),
 			StyleHelpKey.Render("[ ]"),
+			StyleTextSubtle.Render(MetaDotSeparator),
+			StyleHelpKey.Render("y"),
 			StyleTextSubtle.Render(MetaDotSeparator),
 			StyleHelpKey.Render("q")),
 	)
@@ -904,6 +906,22 @@ func (m Model) renderReasoningTab(width, height int) string {
 	if reasoning == "" {
 		md.WriteString("_No reasoning yet._\n")
 	} else {
+		if m.reasoningExpanded {
+			md.WriteString("_Showing full reasoning (`y` to collapse)._")
+		} else {
+			md.WriteString("_Showing truncated reasoning (`y` to expand)._")
+		}
+		md.WriteString("\n\n")
+
+		// Keep rendering fast and readable by default; allow full expansion via toggle.
+		if !m.reasoningExpanded {
+			const maxRunes = 1200
+			r := []rune(reasoning)
+			if len(r) > maxRunes {
+				reasoning = string(r[:maxRunes]) + "\n…"
+			}
+		}
+
 		md.WriteString("```text\n")
 		md.WriteString(reasoning)
 		md.WriteString("\n```\n")
