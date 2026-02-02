@@ -40,6 +40,8 @@ func GetKeybindingHelp() string {
 			Title: "Views",
 			Keys: []Keybinding{
 				{"c", "Show circuit breaker status"},
+				{"[ / ]", "Cycle output tabs (Transcript/Diffs/Reasoning)"},
+				{"y", "Toggle reasoning expansion (output view)"},
 				{"R", "Reset circuit breaker"},
 			},
 		},

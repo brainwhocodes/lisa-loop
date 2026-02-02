@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/brainwhocodes/lisa-loop/internal/config"
+	"github.com/brainwhocodes/lisa-loop/internal/tui/transcript"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -699,55 +700,232 @@ func (m Model) renderOutputFullView() string {
 
 	header := m.renderHeader(width)
 
-	var lines []string
+	tabs := m.renderOutputTabs(width)
 
-	// Show reasoning at the top if we have it
-	if len(m.reasoningLines) > 0 {
-		latestReasoning := m.reasoningLines[len(m.reasoningLines)-1]
-		if len(latestReasoning) > width-20 {
-			latestReasoning = latestReasoning[:width-23] + "..."
-		}
-		// Animated thinking indicator
-		thinkAnim := ThinkingWave[m.tick%len(ThinkingWave)]
-		lines = append(lines, StyleReasoning.Render(" ["+thinkAnim+"] "+latestReasoning))
-		lines = append(lines, "")
+	// Layout
+	const headerHeight = 1
+	const footerHeight = 1
+	const tabsHeight = 1
+	contentHeight := height - headerHeight - tabsHeight - footerHeight - 2
+	if contentHeight < 8 {
+		contentHeight = 8
 	}
 
-	if len(m.outputLines) == 0 && len(m.reasoningLines) == 0 {
-		lines = append(lines, StyleTextMuted.Render(fmt.Sprintf(" Waiting for %s output...", m.backendDisplayName())))
-	} else if len(m.outputLines) > 0 {
-		// Show most recent output lines
-		maxLines := height - 8
-		start := 0
-		if len(m.outputLines) > maxLines {
-			start = len(m.outputLines) - maxLines
-		}
-
-		for i := start; i < len(m.outputLines); i++ {
-			line := m.outputLines[i]
-			if len(line) > width-4 {
-				line = line[:width-7] + "..."
-			}
-			lines = append(lines, " "+line)
-		}
-	}
-
-	content := strings.Join(lines, "\n")
+	content := m.renderOutputTabContent(width, contentHeight)
 
 	footer := StyleFooter.Width(width).Render(
-		fmt.Sprintf(" %s return%s%s quit",
+		fmt.Sprintf(" %s return%s%s tabs%s%s quit",
 			StyleHelpKey.Render("o"),
+			StyleTextSubtle.Render(MetaDotSeparator),
+			StyleHelpKey.Render("[ ]"),
 			StyleTextSubtle.Render(MetaDotSeparator),
 			StyleHelpKey.Render("q")),
 	)
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		header,
+		tabs,
 		"",
 		content,
 		"",
 		footer,
 	)
+}
+
+func (m Model) renderOutputTabs(width int) string {
+	tabs := []OutputTab{OutputTabTranscript, OutputTabDiffs, OutputTabReasoning}
+
+	var parts []string
+	for _, t := range tabs {
+		label := t.String()
+		if t == m.outputTab {
+			parts = append(parts, lipgloss.NewStyle().
+				Foreground(Pepper).
+				Background(Guac).
+				Padding(0, 1).
+				Bold(true).
+				Render(label))
+		} else {
+			parts = append(parts, lipgloss.NewStyle().
+				Foreground(Squid).
+				Background(BBQ).
+				Padding(0, 1).
+				Render(label))
+		}
+	}
+
+	line := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+	return lipgloss.NewStyle().Width(width).Padding(0, 1).Render(line)
+}
+
+func (m Model) renderOutputTabContent(width, height int) string {
+	switch m.outputTab {
+	case OutputTabDiffs:
+		return m.renderDiffTab(width, height)
+	case OutputTabReasoning:
+		return m.renderReasoningTab(width, height)
+	default:
+		return m.renderTranscriptTab(width, height)
+	}
+}
+
+func (m Model) renderTranscriptTab(width, height int) string {
+	// If the structured transcript is not populated yet, fall back to the legacy output.
+	if m.transcript == nil || m.transcript.Len() == 0 {
+		return m.renderOutputPane(width, height)
+	}
+
+	items := m.transcript.Items()
+
+	max := height
+	start := 0
+	if len(items) > max {
+		start = len(items) - max
+	}
+
+	lines := make([]string, 0, max)
+	for i := start; i < len(items); i++ {
+		it := items[i]
+		lines = append(lines, " "+m.formatTranscriptLine(width-2, it))
+		if len(lines) >= height {
+			break
+		}
+	}
+
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+
+	return lipgloss.NewStyle().Width(width).Height(height).Padding(0, 1).Render(strings.Join(lines[:height], "\n"))
+}
+
+func (m Model) formatTranscriptLine(maxWidth int, it transcript.Item) string {
+	ts := ""
+	if !it.At.IsZero() {
+		ts = it.At.Format("15:04:05")
+	}
+
+	roleStyle := StyleTextMuted
+	switch it.Role {
+	case transcript.RoleAssistant:
+		roleStyle = StyleSuccessMsg
+	case transcript.RoleTool:
+		roleStyle = StyleInfoMsg
+	case transcript.RoleUser:
+		roleStyle = StyleTextSelected
+	case transcript.RoleSystem:
+		roleStyle = StyleTextMuted
+	}
+
+	role := roleStyle.Render(string(it.Role))
+
+	body := strings.TrimSpace(it.Body)
+	body = strings.ReplaceAll(body, "\n", " ")
+	if body == "" && it.Title != "" {
+		body = it.Title
+	}
+
+	line := fmt.Sprintf("%s %s %s", ts, role, body)
+	if maxWidth > 10 && lipgloss.Width(line) > maxWidth {
+		// Best-effort truncation for plain text; ANSI width can be imperfect but should be acceptable here.
+		runes := []rune(line)
+		if len(runes) > maxWidth-1 {
+			line = string(runes[:maxWidth-1]) + "…"
+		}
+	}
+	return line
+}
+
+func (m Model) renderDiffTab(width, height int) string {
+	// Prefer git diff output; fall back to pending changes if git is unavailable.
+	var md strings.Builder
+	md.WriteString("## Diffs\n\n")
+
+	if m.diffPending {
+		md.WriteString("Status: **pending** (collecting `git diff`)\n\n")
+	}
+
+	if m.diffErr != nil {
+		md.WriteString("Status: **error**\n\n")
+		md.WriteString("```text\n")
+		md.WriteString(m.diffErr.Error())
+		md.WriteString("\n```\n\n")
+	}
+
+	if m.gitDiffNameStatus == "" && m.gitDiffPatch == "" {
+		if len(m.pendingChanges) == 0 {
+			md.WriteString("_No changes detected._\n")
+		} else {
+			md.WriteString("### Touched files (unverified)\n\n")
+			for _, pc := range m.pendingChanges {
+				md.WriteString(fmt.Sprintf("- `%s` (%s %s)\n", pc.Path, pc.Tool, pc.Status))
+			}
+		}
+	} else {
+		md.WriteString("### Changed files\n\n")
+		md.WriteString("```text\n")
+		md.WriteString(m.gitDiffNameStatus)
+		md.WriteString("\n```\n\n")
+
+		md.WriteString("### Patch\n\n")
+		md.WriteString("```diff\n")
+		md.WriteString(m.gitDiffPatch)
+		md.WriteString("\n```\n")
+	}
+
+	rendered := md.String()
+	if m.md != nil {
+		out, err := m.md.Render(width-2, rendered)
+		if err == nil {
+			rendered = out
+		}
+	}
+
+	// Clamp to height.
+	lines := strings.Split(rendered, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+
+	return lipgloss.NewStyle().Width(width).Height(height).Padding(0, 1).Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) renderReasoningTab(width, height int) string {
+	reasoning := m.currentReasoning
+	if reasoning == "" && len(m.reasoningLines) > 0 {
+		reasoning = m.reasoningLines[len(m.reasoningLines)-1]
+	}
+
+	var md strings.Builder
+	md.WriteString("## Reasoning\n\n")
+	if reasoning == "" {
+		md.WriteString("_No reasoning yet._\n")
+	} else {
+		md.WriteString("```text\n")
+		md.WriteString(reasoning)
+		md.WriteString("\n```\n")
+	}
+
+	rendered := md.String()
+	if m.md != nil {
+		out, err := m.md.Render(width-2, rendered)
+		if err == nil {
+			rendered = out
+		}
+	}
+
+	lines := strings.Split(rendered, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+
+	return lipgloss.NewStyle().Width(width).Height(height).Padding(0, 1).Render(strings.Join(lines, "\n"))
 }
 
 // renderLogsFullView renders logs in full screen mode

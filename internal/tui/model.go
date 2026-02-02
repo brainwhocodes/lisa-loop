@@ -50,6 +50,9 @@ type Model struct {
 	md         *markdown.Renderer
 	transcript *transcript.Buffer
 
+	outputTab         OutputTab
+	reasoningExpanded bool
+
 	// Backend and output streaming
 	backend        string   // Backend name (cli or opencode)
 	outputLines    []string // Live output lines from backend
@@ -218,6 +221,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.addLog(string(loop.LogLevelInfo), "Circuit breaker reset")
 				return m, nil
 
+			}
+		}
+
+		// Output view-only keys (when the output screen is open).
+		if msg.Type == tea.KeyRunes && m.screen == ScreenOutput {
+			switch msg.String() {
+			case "[":
+				if m.outputTab == 0 {
+					m.outputTab = OutputTabReasoning
+				} else {
+					m.outputTab--
+				}
+				return m, nil
+			case "]":
+				if m.outputTab == OutputTabReasoning {
+					m.outputTab = OutputTabTranscript
+				} else {
+					m.outputTab++
+				}
+				return m, nil
+			case "y":
+				m.reasoningExpanded = !m.reasoningExpanded
+				return m, nil
 			}
 		}
 

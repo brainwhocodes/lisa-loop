@@ -91,6 +91,7 @@ func NewProgram(config codex.Config, controller *loop.Controller, explicitMode .
 		exec:           effects.OSExec,
 		md:             markdown.New(),
 		transcript:     transcript.New(500),
+		outputTab:      OutputTabTranscript,
 		activeTaskIdx:  -1,
 		backend:        config.Backend,
 		outputLines:    []string{},
