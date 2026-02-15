@@ -113,7 +113,8 @@ jobs:
           git clone https://github.com/bats-core/bats-core.git /tmp/bats
           cd /tmp/bats
           git checkout v1.12.0
-          ./install.sh /usr/local
+          ./install.sh "$HOME/.local"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Run BATS tests
         run: npm test
