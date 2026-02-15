@@ -26,10 +26,10 @@ type CodexOptions struct {
 
 // CodexResult holds the result of a Codex invocation
 type CodexResult struct {
-	Content     string            // Extracted message content
-	RawOutput   string            // Full raw output
-	Events      []codex.Event     // Parsed events
-	ToolCalls   []CodexToolCall   // Tool calls made
+	Content   string          // Extracted message content
+	RawOutput string          // Full raw output
+	Events    []codex.Event   // Parsed events
+	ToolCalls []CodexToolCall // Tool calls made
 }
 
 // CodexToolCall represents a tool call made by Codex
@@ -176,9 +176,10 @@ func RunCodex(opts CodexOptions) (*CodexResult, error) {
 				})
 				if opts.StreamToTTY {
 					// Show tool calls with visual indicator
-					if parsed.ToolStatus == "started" {
+					switch parsed.ToolStatus {
+					case "started":
 						fmt.Printf("\n> %s %s...\n", parsed.ToolName, parsed.ToolTarget)
-					} else if parsed.ToolStatus == "completed" {
+					case "completed":
 						fmt.Printf("  ✓ %s\n", parsed.ToolTarget)
 					}
 				}

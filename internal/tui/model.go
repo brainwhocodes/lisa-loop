@@ -650,9 +650,11 @@ func (m *Model) appendTranscriptLine(body, lineType string) {
 	if m.transcript == nil {
 		return
 	}
-	role := transcript.RoleSystem
-	kind := transcript.KindNotice
-	title := ""
+	var (
+		role  transcript.Role
+		kind  transcript.Kind
+		title string
+	)
 
 	switch lineType {
 	case "tool_call":

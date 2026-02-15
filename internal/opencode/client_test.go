@@ -372,7 +372,8 @@ func TestConnectToSSE_PrimaryEndpoint(t *testing.T) {
 	fallbackCalled := false
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/global/event" {
+		switch r.URL.Path {
+		case "/global/event":
 			primaryCalled = true
 			w.WriteHeader(http.StatusOK)
 			// Write SSE headers
@@ -384,7 +385,7 @@ func TestConnectToSSE_PrimaryEndpoint(t *testing.T) {
 				fmt.Fprint(w, "data: {\"type\":\"test\"}\n\n")
 				flusher.Flush()
 			}
-		} else if r.URL.Path == "/event" {
+		case "/event":
 			fallbackCalled = true
 			w.WriteHeader(http.StatusOK)
 		}
@@ -419,10 +420,11 @@ func TestConnectToSSE_FallbackEndpoint(t *testing.T) {
 	fallbackCalled := false
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/global/event" {
+		switch r.URL.Path {
+		case "/global/event":
 			primaryCalled = true
 			w.WriteHeader(http.StatusNotFound) // Primary fails
-		} else if r.URL.Path == "/event" {
+		case "/event":
 			fallbackCalled = true
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
