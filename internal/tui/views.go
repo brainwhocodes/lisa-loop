@@ -537,23 +537,9 @@ func (m Model) renderOutputPane(width, height int) string {
 // renderFooter renders the Crush-style footer with keybindings
 // Format: r run • p pause • l logs • c circuit • ? help • q quit
 func (m Model) renderFooter(width int) string {
-	bindings := []struct {
-		key  string
-		desc string
-	}{
-		{"r", "run"},
-		{"p", "pause"},
-		{"l", "logs"},
-		{"c", "circuit"},
-		{"t", "tasks"},
-		{"o", "output"},
-		{"?", "help"},
-		{"q", "quit"},
-	}
-
 	var parts []string
-	for _, b := range bindings {
-		parts = append(parts, StyleHelpKey.Render(b.key)+" "+StyleHelpDesc.Render(b.desc))
+	for _, b := range footerBindings() {
+		parts = append(parts, StyleHelpKey.Render(b.Key)+" "+StyleHelpDesc.Render(b.Description))
 	}
 
 	footerContent := " " + strings.Join(parts, StyleTextSubtle.Render(MetaDotSeparator))
