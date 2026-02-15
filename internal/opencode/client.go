@@ -599,6 +599,7 @@ func (c *Client) sendMessageStreamingInternal(ctx context.Context, sessionID, co
 	// Track assistant message parts by messageID
 	assistantMsgID := ""
 	parts := make(map[string]string) // partID -> text
+	partOrder := make([]string, 0)
 	done := make(chan struct{})
 	errChan := make(chan error, 1)
 	retryCount := 0
@@ -681,7 +682,15 @@ func (c *Client) sendMessageStreamingInternal(ctx context.Context, sessionID, co
 				if err := json.Unmarshal(event.Properties, &props); err == nil {
 					if props.Part.SessionID == sessionID && props.Part.MessageID == assistantMsgID {
 						if props.Part.Type == "text" {
-							parts[props.Part.ID] = props.Part.Text
+							if _, exists := parts[props.Part.ID]; !exists {
+								parts[props.Part.ID] = ""
+								partOrder = append(partOrder, props.Part.ID)
+							}
+							if props.Part.Text != "" {
+								parts[props.Part.ID] = props.Part.Text
+							} else if props.Part.Delta != "" {
+								parts[props.Part.ID] += props.Part.Delta
+							}
 						}
 					}
 				}
@@ -785,12 +794,13 @@ func (c *Client) sendMessageStreamingInternal(ctx context.Context, sessionID, co
 	// Combine all text parts
 	mu.Lock()
 	var texts []string
-	for _, text := range parts {
+	for _, partID := range partOrder {
+		text := parts[partID]
 		if text != "" {
 			texts = append(texts, text)
 		}
 	}
-	result.Content = strings.Join(texts, "\n")
+	result.Content = strings.Join(texts, "")
 	mu.Unlock()
 
 	return result, nil

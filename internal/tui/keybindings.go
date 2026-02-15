@@ -19,39 +19,32 @@ type KeybindingSection struct {
 	Keys  []Keybinding
 }
 
-// GetKeybindingHelp returns formatted help text for all keybindings
-func GetKeybindingHelp() string {
-	sections := []KeybindingSection{
-		{
-			Title: "Navigation",
-			Keys: []Keybinding{
-				{"q / Ctrl+C", "Quit Lisa Codex"},
-				{"?", "Toggle help screen"},
-			},
-		},
-		{
-			Title: "Loop Control",
-			Keys: []Keybinding{
-				{"r", "Run / Restart loop"},
-				{"p", "Pause / Resume loop"},
-			},
-		},
-		{
-			Title: "Views",
-			Keys: []Keybinding{
-				{"c", "Show circuit breaker status"},
-				{"[ / ]", "Cycle output tabs (Transcript/Diffs/Reasoning)"},
-				{"y", "Toggle reasoning expansion (output view)"},
-				{"R", "Reset circuit breaker"},
-			},
-		},
+var (
+	navigationBindings  = []Keybinding{{"q / Ctrl+C", "Quit Lisa Codex"}, {"?", "Toggle help screen"}}
+	loopControlBindings = []Keybinding{{"r", "Run / Restart loop"}, {"p", "Pause / Resume loop"}}
+	viewBindings        = []Keybinding{
+		{"l", "Toggle logs view"},
+		{"t", "Toggle tasks view"},
+		{"o", "Toggle output view"},
+		{"c", "Show circuit breaker status"},
+		{"[ / ]", "Cycle output tabs (Transcript/Diffs/Reasoning)"},
+		{"y", "Toggle reasoning expansion (output view)"},
+		{"R", "Reset circuit breaker"},
+	}
+)
+
+func keybindingSections() []KeybindingSection {
+	return []KeybindingSection{
+		{Title: "Navigation", Keys: navigationBindings},
+		{Title: "Loop Control", Keys: loopControlBindings},
+		{Title: "Views", Keys: viewBindings},
 		{
 			Title: "CLI Options",
 			Keys: []Keybinding{
 				{"--monitor", "Enable integrated TUI monitoring"},
 				{"--verbose", "Verbose output"},
 				{"--backend cli", "Use CLI backend"},
-				{"--backend sdk", "Use SDK backend"},
+				{"--backend opencode", "Use OpenCode backend"},
 			},
 		},
 		{
@@ -86,7 +79,24 @@ func GetKeybindingHelp() string {
 			},
 		},
 	}
+}
 
+func footerBindings() []Keybinding {
+	return []Keybinding{
+		{"r", "run"},
+		{"p", "pause"},
+		{"l", "logs"},
+		{"t", "tasks"},
+		{"o", "output"},
+		{"c", "circuit"},
+		{"?", "help"},
+		{"q", "quit"},
+	}
+}
+
+// GetKeybindingHelp returns formatted help text for all keybindings
+func GetKeybindingHelp() string {
+	sections := keybindingSections()
 	var builder strings.Builder
 
 	for _, section := range sections {

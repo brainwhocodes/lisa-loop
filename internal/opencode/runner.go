@@ -22,8 +22,12 @@ type Runner struct {
 	server         *Server
 	cfg            config.Config
 	// Track last emitted content to avoid duplicates (SSE sends cumulative updates)
-	lastReasoning string
-	lastMessage   string
+	lastReasoning  string
+	lastMessage    string
+	messageParts   map[string]string
+	reasoningParts map[string]string
+	messageOrder   []string
+	reasoningOrder []string
 	// Context tracking for auto-save
 	contextTracker *ContextTracker
 	archiver       *SessionArchiver
@@ -75,38 +79,21 @@ func (r *Runner) Run(prompt string) (output string, sessionID string, err error)
 		}
 	}
 
-	// Use cached session ID if available
-	sessionID = r.sessionID
+	// Each loop/task run uses a fresh OpenCode session to keep iteration context isolated.
+	r.emitEvent("message", map[string]interface{}{
+		"content": "Creating new session for this loop...",
+	})
 
-	// Load from file if not cached
-	if sessionID == "" {
-		sessionID, err = LoadSessionID()
-		if err != nil {
-			return "", "", fmt.Errorf("failed to load session: %w", err)
-		}
+	sessionID, err = r.client.CreateSession()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create session: %w", err)
 	}
 
-	// Create new session if none exists
-	if sessionID == "" {
-		r.emitEvent("message", map[string]interface{}{
-			"content": "Creating new session...",
-		})
+	r.emitEvent("message", map[string]interface{}{
+		"content": fmt.Sprintf("Session created: %s", shortSessionID(sessionID)),
+	})
 
-		sessionID, err = r.client.CreateSession()
-		if err != nil {
-			return "", "", fmt.Errorf("failed to create session: %w", err)
-		}
-
-		if err := SaveSessionID(sessionID); err != nil {
-			return "", sessionID, fmt.Errorf("failed to save session ID: %w", err)
-		}
-
-		r.emitEvent("message", map[string]interface{}{
-			"content": fmt.Sprintf("Session created: %s", sessionID[:12]+"..."),
-		})
-	}
-
-	// Cache the session ID for future calls
+	// Cache only for diagnostics/getters; do not reuse for future runs.
 	r.sessionID = sessionID
 
 	r.emitEvent("message", map[string]interface{}{
@@ -116,6 +103,11 @@ func (r *Runner) Run(prompt string) (output string, sessionID string, err error)
 	// Reset tracking for new message (SSE sends cumulative updates)
 	r.lastReasoning = ""
 	r.lastMessage = ""
+	r.messageParts = make(map[string]string)
+	r.reasoningParts = make(map[string]string)
+	r.messageOrder = nil
+	r.reasoningOrder = nil
+	r.contextTracker.Reset()
 
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), r.timeout)
@@ -283,7 +275,7 @@ func (r *Runner) saveAndRotateSession(sessionID string, usage ContextUsage, reas
 	r.contextTracker.Reset()
 
 	r.emitEvent("message", map[string]interface{}{
-		"content": fmt.Sprintf("New session created: %s", newSessionID[:12]+"..."),
+		"content": fmt.Sprintf("New session created: %s", shortSessionID(newSessionID)),
 	})
 
 	return archivePath, nil
@@ -306,28 +298,34 @@ func (r *Runner) Stop() error {
 func (r *Runner) handleSSEEvent(sessionID string, event SSEEvent) {
 	switch event.Type {
 	case "message.part.updated":
+		if r.messageParts == nil {
+			r.messageParts = make(map[string]string)
+		}
+		if r.reasoningParts == nil {
+			r.reasoningParts = make(map[string]string)
+		}
 		var props PartUpdatedProps
 		if err := json.Unmarshal(event.Properties, &props); err == nil {
 			part := props.Part
 			switch part.Type {
 			case "reasoning":
-				// Only emit if text changed (SSE sends cumulative updates)
-				if part.Text != "" && part.Text != r.lastReasoning {
-					r.lastReasoning = part.Text
+				reasoning := r.mergePartText(part.ID, part.Text, part.Delta, r.reasoningParts, &r.reasoningOrder)
+				if reasoning != "" && reasoning != r.lastReasoning {
+					r.lastReasoning = reasoning
 					r.emitEvent("item.completed", map[string]interface{}{
 						"item": map[string]interface{}{
 							"type": "reasoning",
-							"text": part.Text,
+							"text": reasoning,
 						},
 					})
 				}
 			case "text":
-				// Only emit if text changed (SSE sends cumulative updates)
-				if part.Text != "" && part.Text != r.lastMessage {
-					r.lastMessage = part.Text
+				message := r.mergePartText(part.ID, part.Text, part.Delta, r.messageParts, &r.messageOrder)
+				if message != "" && message != r.lastMessage {
+					r.lastMessage = message
 					r.emitEvent("message", map[string]interface{}{
 						"type":    "message",
-						"content": part.Text,
+						"content": message,
 					})
 				}
 			case "tool":
@@ -391,9 +389,68 @@ func (r *Runner) handleSSEEvent(sessionID string, event SSEEvent) {
 					"type":   "status",
 					"status": "complete",
 				})
+			case "error":
+				r.emitEvent("lifecycle", map[string]interface{}{
+					"type":    "status",
+					"status":  "error",
+					"message": status.Message,
+				})
+			}
+		}
+
+	case "session.diff":
+		var props SessionDiffProps
+		if err := json.Unmarshal(event.Properties, &props); err == nil {
+			for _, d := range props.Diff {
+				if d.File == "" {
+					continue
+				}
+				r.emitEvent("tool_use", map[string]interface{}{
+					"name":   "apply_patch",
+					"target": d.File,
+					"status": "completed",
+				})
 			}
 		}
 	}
+}
+
+func (r *Runner) mergePartText(partID, text, delta string, partMap map[string]string, order *[]string) string {
+	if partID == "" {
+		return ""
+	}
+	if partMap == nil {
+		return ""
+	}
+
+	if _, exists := partMap[partID]; !exists {
+		partMap[partID] = ""
+		*order = append(*order, partID)
+	}
+
+	if text != "" {
+		partMap[partID] = text
+	} else if delta != "" {
+		partMap[partID] += delta
+	}
+
+	if partMap[partID] == "" {
+		return ""
+	}
+
+	combined := ""
+	for _, id := range *order {
+		combined += partMap[id]
+	}
+	return combined
+}
+
+func shortSessionID(id string) string {
+	const keep = 12
+	if len(id) <= keep {
+		return id
+	}
+	return id[:keep] + "..."
 }
 
 // startManagedServer starts a child OpenCode server in the project directory

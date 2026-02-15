@@ -496,9 +496,7 @@ func (m Model) renderOutputPane(width, height int) string {
 		// Flatten multi-line output entries so escaped newlines render as actual lines.
 		var flat []string
 		for _, ol := range m.outputLines {
-			for _, l := range strings.Split(ol, "\n") {
-				flat = append(flat, l)
-			}
+			flat = append(flat, strings.Split(ol, "\n")...)
 		}
 
 		// Show most recent output lines that fit.
@@ -537,23 +535,9 @@ func (m Model) renderOutputPane(width, height int) string {
 // renderFooter renders the Crush-style footer with keybindings
 // Format: r run • p pause • l logs • c circuit • ? help • q quit
 func (m Model) renderFooter(width int) string {
-	bindings := []struct {
-		key  string
-		desc string
-	}{
-		{"r", "run"},
-		{"p", "pause"},
-		{"l", "logs"},
-		{"c", "circuit"},
-		{"t", "tasks"},
-		{"o", "output"},
-		{"?", "help"},
-		{"q", "quit"},
-	}
-
 	var parts []string
-	for _, b := range bindings {
-		parts = append(parts, StyleHelpKey.Render(b.key)+" "+StyleHelpDesc.Render(b.desc))
+	for _, b := range footerBindings() {
+		parts = append(parts, StyleHelpKey.Render(b.Key)+" "+StyleHelpDesc.Render(b.Description))
 	}
 
 	footerContent := " " + strings.Join(parts, StyleTextSubtle.Render(MetaDotSeparator))
@@ -1005,170 +989,4 @@ func (m Model) renderLogsFullView() string {
 		"",
 		footer,
 	)
-}
-
-// renderPreflightSummary renders a preflight summary panel
-// Shows mode, plan file, remaining tasks, circuit state, and rate limit status
-func (m Model) renderPreflightSummary(width int) string {
-	var lines []string
-
-	// Title
-	lines = append(lines, StyleTextBase.Render(" Preflight Check"))
-	lines = append(lines, StyleTextMuted.Render(" "+strings.Repeat("─", width-4)))
-
-	// Skip reason (if any)
-	if m.preflightShouldSkip {
-		lines = append(lines, "")
-		lines = append(lines, StyleErrorMsg.Render(fmt.Sprintf(" ⚠ Skipped: %s", m.preflightSkipReason)))
-	}
-
-	// Mode and plan file
-	lines = append(lines, "")
-	if m.preflightMode != "" {
-		lines = append(lines, fmt.Sprintf(" %s %s",
-			StyleTextMuted.Render("Mode:"),
-			StyleTextBase.Render(m.preflightMode)))
-	}
-	if m.preflightPlanFile != "" {
-		lines = append(lines, fmt.Sprintf(" %s %s",
-			StyleTextMuted.Render("Plan:"),
-			StyleTextBase.Render(m.preflightPlanFile)))
-	}
-
-	// Task summary
-	if m.preflightTotalTasks > 0 {
-		lines = append(lines, "")
-		progress := m.preflightTotalTasks - m.preflightRemainingCount
-		pct := 0
-		if m.preflightTotalTasks > 0 {
-			pct = (progress * 100) / m.preflightTotalTasks
-		}
-
-		// Progress bar
-		barWidth := 20
-		filled := 0
-		if m.preflightTotalTasks > 0 {
-			filled = (progress * barWidth) / m.preflightTotalTasks
-		}
-		empty := barWidth - filled
-		bar := StyleProgressFilled.Render(strings.Repeat("█", filled)) +
-			StyleProgressEmpty.Render(strings.Repeat("░", empty))
-
-		lines = append(lines, fmt.Sprintf(" %s %d/%d (%d%%) %s",
-			StyleTextMuted.Render("Progress:"),
-			progress,
-			m.preflightTotalTasks,
-			pct,
-			bar))
-	}
-
-	// Circuit state
-	circuitState := m.preflightCircuitState
-	if circuitState == "" {
-		circuitState = m.circuitState
-	}
-	if circuitState == "" {
-		circuitState = "CLOSED"
-	}
-	circuitState = strings.ToLower(circuitState)
-
-	var circuitStyle lipgloss.Style
-	switch circuitState {
-	case "closed":
-		circuitStyle = StyleCircuitClosed
-	case "half_open", "half-open":
-		circuitStyle = StyleCircuitHalfOpen
-		circuitState = "half-open"
-	case "open":
-		circuitStyle = StyleCircuitOpen
-	default:
-		circuitStyle = StyleTextMuted
-	}
-
-	lines = append(lines, "")
-	lines = append(lines, fmt.Sprintf(" %s %s",
-		StyleTextMuted.Render("Circuit:"),
-		circuitStyle.Render(circuitState)))
-
-	// Rate limit
-	if m.preflightCallsRemaining > 0 || m.preflightRateLimitOK {
-		var rateStyle lipgloss.Style
-		if m.preflightCallsRemaining < 3 {
-			rateStyle = StyleWarningMsg
-		} else {
-			rateStyle = StyleSuccessMsg
-		}
-		lines = append(lines, fmt.Sprintf(" %s %s",
-			StyleTextMuted.Render("Calls:"),
-			rateStyle.Render(fmt.Sprintf("%d remaining", m.preflightCallsRemaining))))
-	}
-
-	content := strings.Join(lines, "\n")
-	return lipgloss.NewStyle().
-		Width(width).
-		Padding(0, 1).
-		Render(content)
-}
-
-// renderNextTasksPanel renders a panel showing the next N remaining tasks
-// This is displayed at the start of each loop iteration
-func (m Model) renderNextTasksPanel(width int, maxTasks int) string {
-	var lines []string
-
-	// Title
-	if m.preflightRemainingCount == 0 {
-		lines = append(lines, StyleSuccessMsg.Render(" ✓ All tasks complete!"))
-	} else {
-		lines = append(lines, StyleTextBase.Render(fmt.Sprintf(" Next Tasks (%d remaining)", m.preflightRemainingCount)))
-	}
-	lines = append(lines, StyleTextMuted.Render(" "+strings.Repeat("─", width-4)))
-
-	// Tasks to show
-	tasksToShow := m.preflightRemainingTasks
-	if len(tasksToShow) == 0 && len(m.tasks) > 0 {
-		// Fallback: use tasks from model if preflight hasn't populated yet
-		count := 0
-		for _, t := range m.tasks {
-			if !t.Completed && count < maxTasks {
-				tasksToShow = append(tasksToShow, t.Text)
-				count++
-			}
-		}
-	}
-
-	if len(tasksToShow) == 0 && m.preflightRemainingCount > 0 {
-		lines = append(lines, "")
-		lines = append(lines, StyleTextMuted.Render(" Loading tasks..."))
-	} else if len(tasksToShow) > 0 {
-		lines = append(lines, "")
-		for i, task := range tasksToShow {
-			if i >= maxTasks {
-				break
-			}
-			// Truncate task text if too long
-			taskText := task
-			if len(taskText) > width-8 {
-				taskText = taskText[:width-11] + "..."
-			}
-			// Strip [ ] prefix if present for cleaner display
-			taskText = strings.TrimPrefix(taskText, "[ ] ")
-			lines = append(lines, fmt.Sprintf(" %s %d. %s",
-				StyleTaskPending.Render(IconPending),
-				i+1,
-				StyleTaskTextPending.Render(taskText)))
-		}
-
-		// Show "+X more" if there are more tasks
-		remaining := m.preflightRemainingCount - len(tasksToShow)
-		if remaining > 0 {
-			lines = append(lines, "")
-			lines = append(lines, StyleTextSubtle.Render(fmt.Sprintf(" ... and %d more", remaining)))
-		}
-	}
-
-	content := strings.Join(lines, "\n")
-	return lipgloss.NewStyle().
-		Width(width).
-		Padding(0, 1).
-		Render(content)
 }

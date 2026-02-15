@@ -372,7 +372,8 @@ func TestConnectToSSE_PrimaryEndpoint(t *testing.T) {
 	fallbackCalled := false
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/global/event" {
+		switch r.URL.Path {
+		case "/global/event":
 			primaryCalled = true
 			w.WriteHeader(http.StatusOK)
 			// Write SSE headers
@@ -384,7 +385,7 @@ func TestConnectToSSE_PrimaryEndpoint(t *testing.T) {
 				fmt.Fprint(w, "data: {\"type\":\"test\"}\n\n")
 				flusher.Flush()
 			}
-		} else if r.URL.Path == "/event" {
+		case "/event":
 			fallbackCalled = true
 			w.WriteHeader(http.StatusOK)
 		}
@@ -419,10 +420,11 @@ func TestConnectToSSE_FallbackEndpoint(t *testing.T) {
 	fallbackCalled := false
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/global/event" {
+		switch r.URL.Path {
+		case "/global/event":
 			primaryCalled = true
 			w.WriteHeader(http.StatusNotFound) // Primary fails
-		} else if r.URL.Path == "/event" {
+		case "/event":
 			fallbackCalled = true
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
@@ -642,5 +644,107 @@ func TestSSEEventParsing_WithoutEventType(t *testing.T) {
 
 	if receivedEvents[0].Type != "message.updated" {
 		t.Errorf("Expected event type 'message.updated', got '%s'", receivedEvents[0].Type)
+	}
+}
+
+func TestSendMessageStreaming_DoesNotDuplicatePartAfterEmptyStarter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/global/event":
+			w.Header().Set("Content-Type", "text/event-stream")
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				t.Skip("Flusher not supported")
+				return
+			}
+
+			fmt.Fprint(w, "event: message.updated\n")
+			fmt.Fprint(w, "data: {\"properties\":{\"info\":{\"id\":\"msg-1\",\"sessionID\":\"test-session\",\"role\":\"assistant\"}}}\n\n")
+			flusher.Flush()
+
+			fmt.Fprint(w, "event: message.part.updated\n")
+			fmt.Fprint(w, "data: {\"properties\":{\"part\":{\"id\":\"p1\",\"sessionID\":\"test-session\",\"messageID\":\"msg-1\",\"type\":\"text\"}}}\n\n")
+			flusher.Flush()
+
+			fmt.Fprint(w, "event: message.part.updated\n")
+			fmt.Fprint(w, "data: {\"properties\":{\"part\":{\"id\":\"p1\",\"sessionID\":\"test-session\",\"messageID\":\"msg-1\",\"type\":\"text\",\"delta\":\"Hi\"}}}\n\n")
+			flusher.Flush()
+
+			fmt.Fprint(w, "event: session.status\n")
+			fmt.Fprint(w, "data: {\"properties\":{\"sessionID\":\"test-session\",\"status\":{\"type\":\"idle\"}}}\n\n")
+			flusher.Flush()
+
+		case "/session/test-session/prompt_async":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{ServerURL: server.URL})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	result, err := client.sendMessageStreamingInternal(ctx, "test-session", "prompt", nil)
+	if err != nil {
+		t.Fatalf("sendMessageStreamingInternal failed: %v", err)
+	}
+
+	if result.Content != "Hi" {
+		t.Fatalf("expected non-duplicated content 'Hi', got %q", result.Content)
+	}
+}
+
+func TestSendMessageStreaming_AggregatesDeltaInOrder(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/global/event":
+			w.Header().Set("Content-Type", "text/event-stream")
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				t.Skip("Flusher not supported")
+				return
+			}
+
+			fmt.Fprint(w, "event: message.updated\n")
+			fmt.Fprint(w, "data: {\"properties\":{\"info\":{\"id\":\"msg-1\",\"sessionID\":\"test-session\",\"role\":\"assistant\"}}}\n\n")
+			flusher.Flush()
+
+			fmt.Fprint(w, "event: message.part.updated\n")
+			fmt.Fprint(w, "data: {\"properties\":{\"part\":{\"id\":\"p1\",\"sessionID\":\"test-session\",\"messageID\":\"msg-1\",\"type\":\"text\",\"text\":\"Hello \"}}}\n\n")
+			flusher.Flush()
+
+			fmt.Fprint(w, "event: message.part.updated\n")
+			fmt.Fprint(w, "data: {\"properties\":{\"part\":{\"id\":\"p2\",\"sessionID\":\"test-session\",\"messageID\":\"msg-1\",\"type\":\"text\",\"text\":\"Wor\"}}}\n\n")
+			flusher.Flush()
+
+			fmt.Fprint(w, "event: message.part.updated\n")
+			fmt.Fprint(w, "data: {\"properties\":{\"part\":{\"id\":\"p2\",\"sessionID\":\"test-session\",\"messageID\":\"msg-1\",\"type\":\"text\",\"delta\":\"ld!\"}}}\n\n")
+			flusher.Flush()
+
+			fmt.Fprint(w, "event: session.status\n")
+			fmt.Fprint(w, "data: {\"properties\":{\"sessionID\":\"test-session\",\"status\":{\"type\":\"idle\"}}}\n\n")
+			flusher.Flush()
+
+		case "/session/test-session/prompt_async":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{ServerURL: server.URL})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	result, err := client.sendMessageStreamingInternal(ctx, "test-session", "prompt", nil)
+	if err != nil {
+		t.Fatalf("sendMessageStreamingInternal failed: %v", err)
+	}
+
+	if result.Content != "Hello World!" {
+		t.Fatalf("expected ordered aggregated content 'Hello World!', got %q", result.Content)
 	}
 }

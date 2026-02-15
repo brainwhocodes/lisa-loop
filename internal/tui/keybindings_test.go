@@ -36,16 +36,28 @@ func TestGetKeybindingHelp(t *testing.T) {
 		"r",
 		"p",
 		"l",
+		"t",
+		"o",
 		"c",
 		"R",
 		"--monitor",
 		"--verbose",
-		"--backend",
+		"--backend opencode",
 	}
 
 	for _, key := range expectedKeys {
 		if !strings.Contains(help, key) {
 			t.Errorf("Help should contain key '%s'", key)
+		}
+	}
+}
+
+func TestFooterBindingsAreDocumentedInHelp(t *testing.T) {
+	help := GetKeybindingHelp()
+
+	for _, binding := range footerBindings() {
+		if !strings.Contains(help, binding.Key) {
+			t.Errorf("Help should include footer key %q", binding.Key)
 		}
 	}
 }
