@@ -683,6 +683,7 @@ func (c *Client) sendMessageStreamingInternal(ctx context.Context, sessionID, co
 					if props.Part.SessionID == sessionID && props.Part.MessageID == assistantMsgID {
 						if props.Part.Type == "text" {
 							if _, exists := parts[props.Part.ID]; !exists {
+								parts[props.Part.ID] = ""
 								partOrder = append(partOrder, props.Part.ID)
 							}
 							if props.Part.Text != "" {

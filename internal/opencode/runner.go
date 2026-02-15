@@ -424,6 +424,7 @@ func (r *Runner) mergePartText(partID, text, delta string, partMap map[string]st
 	}
 
 	if _, exists := partMap[partID]; !exists {
+		partMap[partID] = ""
 		*order = append(*order, partID)
 	}
 

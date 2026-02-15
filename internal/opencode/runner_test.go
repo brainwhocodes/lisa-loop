@@ -11,6 +11,31 @@ import (
 	"github.com/brainwhocodes/lisa-loop/internal/config"
 )
 
+func TestHandleSSEEvent_MessageDeltaNotDuplicatedAfterEmptyStarter(t *testing.T) {
+	r := &Runner{}
+	var got []map[string]interface{}
+	r.SetOutputCallback(func(event map[string]interface{}) {
+		got = append(got, event)
+	})
+
+	r.handleSSEEvent("session-1", SSEEvent{Type: "message.part.updated", Properties: mustMarshalJSON(map[string]interface{}{
+		"part": map[string]interface{}{"id": "p1", "type": "text"},
+	})})
+	r.handleSSEEvent("session-1", SSEEvent{Type: "message.part.updated", Properties: mustMarshalJSON(map[string]interface{}{
+		"part": map[string]interface{}{"id": "p1", "type": "text", "delta": "Hi"},
+	})})
+
+	if len(got) != 1 {
+		t.Fatalf("expected exactly 1 emitted message event, got %d", len(got))
+	}
+	if got[0]["type"] != "message" {
+		t.Fatalf("expected type=message, got %v", got[0]["type"])
+	}
+	if got[0]["content"] != "Hi" {
+		t.Fatalf("expected non-duplicated content 'Hi', got %v", got[0]["content"])
+	}
+}
+
 func TestHandleSSEEvent_MessageDeltaAggregates(t *testing.T) {
 	r := &Runner{}
 	var got []map[string]interface{}
