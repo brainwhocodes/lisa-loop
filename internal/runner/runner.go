@@ -29,6 +29,8 @@ func New(cfg config.Config) Runner {
 	switch cfg.Backend {
 	case "opencode":
 		return &openCodeWrapper{runner: opencode.NewRunner(cfg)}
+	case "cli", "codex", "ralph", "claude-code", "copilot":
+		return &codexWrapper{runner: codex.NewRunner(codex.Config(cfg))}
 	default:
 		// Default to codex CLI backend
 		return &codexWrapper{runner: codex.NewRunner(codex.Config(cfg))}

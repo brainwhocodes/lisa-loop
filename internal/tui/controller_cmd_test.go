@@ -59,6 +59,22 @@ func TestRunStartsControllerViaCmdAndCompletesOnDoneMsg(t *testing.T) {
 	}
 }
 
+func TestAutoStartMsgStartsController(t *testing.T) {
+	fc := &fakeController{}
+	model := Model{
+		state:      StateInitializing,
+		controller: fc,
+	}
+
+	newModel, cmd := model.Update(tuimsg.AutoStartLoopMsg{})
+	if cmd == nil {
+		t.Fatalf("expected a command on AutoStartLoopMsg")
+	}
+	if newModel.(Model).state != StateRunning {
+		t.Fatalf("expected StateRunning after auto-start, got %v", newModel.(Model).state)
+	}
+}
+
 func TestQuitCancelsControllerContext(t *testing.T) {
 	cancelled := false
 	model := Model{
