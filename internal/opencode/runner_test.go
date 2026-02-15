@@ -2,7 +2,13 @@ package opencode
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+
+	"github.com/brainwhocodes/lisa-loop/internal/config"
 )
 
 func TestHandleSSEEvent_MessageDeltaAggregates(t *testing.T) {
@@ -91,5 +97,106 @@ func TestHandleSSEEvent_SessionStatusErrorIsForwarded(t *testing.T) {
 	}
 	if got["message"] != "boom" {
 		t.Fatalf("expected error message forwarded, got %v", got["message"])
+	}
+}
+
+func TestHandleSSEEvent_SessionDiffEmitsToolUse(t *testing.T) {
+	r := &Runner{}
+	var got []map[string]interface{}
+	r.SetOutputCallback(func(event map[string]interface{}) {
+		got = append(got, event)
+	})
+
+	props := mustMarshalJSON(map[string]interface{}{
+		"sessionID": "session-1",
+		"diff": []map[string]interface{}{
+			{"file": "internal/opencode/runner.go", "additions": 10, "deletions": 2},
+			{"file": "README.md", "additions": 1, "deletions": 0},
+		},
+	})
+
+	r.handleSSEEvent("session-1", SSEEvent{Type: "session.diff", Properties: props})
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 tool_use events, got %d", len(got))
+	}
+	for i, ev := range got {
+		if ev["type"] != "tool_use" {
+			t.Fatalf("event[%d] expected tool_use, got %v", i, ev["type"])
+		}
+		if ev["name"] != "apply_patch" {
+			t.Fatalf("event[%d] expected apply_patch name, got %v", i, ev["name"])
+		}
+		if ev["status"] != "completed" {
+			t.Fatalf("event[%d] expected completed status, got %v", i, ev["status"])
+		}
+	}
+}
+
+func TestRun_CreatesNewSessionEachCall(t *testing.T) {
+	var createSessionCalls int32
+	var sessionSeq int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/session":
+			call := atomic.AddInt32(&createSessionCalls, 1)
+			id := fmt.Sprintf("session-%d", atomic.AddInt32(&sessionSeq, 1))
+			if call <= 0 {
+				t.Fatalf("invalid create session call count")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(CreateSessionResponse{ID: id, Slug: id})
+
+		case r.Method == http.MethodGet && r.URL.Path == "/global/event":
+			w.Header().Set("Content-Type", "text/event-stream")
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				t.Skip("Flusher not supported")
+				return
+			}
+			fmt.Fprint(w, "event: message.updated\n")
+			fmt.Fprint(w, "data: {\"properties\":{\"info\":{\"id\":\"msg-1\",\"sessionID\":\"session-1\",\"role\":\"assistant\"}}}\n\n")
+			fmt.Fprint(w, "event: message.updated\n")
+			fmt.Fprint(w, "data: {\"properties\":{\"info\":{\"id\":\"msg-2\",\"sessionID\":\"session-2\",\"role\":\"assistant\"}}}\n\n")
+			fmt.Fprint(w, "event: session.status\n")
+			fmt.Fprint(w, "data: {\"properties\":{\"sessionID\":\"session-1\",\"status\":{\"type\":\"idle\"}}}\n\n")
+			fmt.Fprint(w, "event: session.status\n")
+			fmt.Fprint(w, "data: {\"properties\":{\"sessionID\":\"session-2\",\"status\":{\"type\":\"idle\"}}}\n\n")
+			flusher.Flush()
+
+		case r.Method == http.MethodPost && (r.URL.Path == "/session/session-1/prompt_async" || r.URL.Path == "/session/session-2/prompt_async"):
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	r := NewRunner(config.Config{OpenCodeServerURL: server.URL, Timeout: 5})
+
+	_, sid1, err := r.Run("first")
+	if err != nil {
+		t.Fatalf("first run failed: %v", err)
+	}
+	_, sid2, err := r.Run("second")
+	if err != nil {
+		t.Fatalf("second run failed: %v", err)
+	}
+
+	if sid1 == sid2 {
+		t.Fatalf("expected unique session IDs per run, got same id %q", sid1)
+	}
+	if atomic.LoadInt32(&createSessionCalls) != 2 {
+		t.Fatalf("expected 2 session creations, got %d", createSessionCalls)
+	}
+}
+
+func TestShortSessionID(t *testing.T) {
+	if got := shortSessionID("session"); got != "session" {
+		t.Fatalf("expected unchanged short session id, got %q", got)
+	}
+	if got := shortSessionID("1234567890123456"); got != "123456789012..." {
+		t.Fatalf("expected truncated session id, got %q", got)
 	}
 }
