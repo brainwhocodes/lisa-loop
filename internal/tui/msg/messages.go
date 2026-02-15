@@ -33,6 +33,9 @@ type StatusMsg struct {
 // TickMsg is sent periodically for animations.
 type TickMsg time.Time
 
+// AutoStartLoopMsg triggers the first controller run when monitor mode launches.
+type AutoStartLoopMsg struct{}
+
 // ControllerEventMsg wraps events from the loop controller.
 type ControllerEventMsg struct {
 	Event loop.LoopEvent

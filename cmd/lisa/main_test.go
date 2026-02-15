@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"flag"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -369,6 +371,46 @@ func TestHelpText(t *testing.T) {
 	for _, section := range requiredSections {
 		if !strings.Contains(helpText, section) {
 			t.Errorf("Help text missing required section: %s", section)
+		}
+	}
+}
+
+func TestNormalizeBackend(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{in: "", want: "opencode"},
+		{in: "cli", want: "cli"},
+		{in: "codex", want: "codex"},
+		{in: "ralph", want: "ralph"},
+		{in: "claude-code", want: "claude-code"},
+		{in: "copilot", want: "copilot"},
+	}
+
+	for _, tt := range tests {
+		got := normalizeBackend(tt.in)
+		if got != tt.want {
+			t.Fatalf("normalizeBackend(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestEnsureRalphMonitorFiles(t *testing.T) {
+	tmp := t.TempDir()
+	if err := ensureRalphMonitorFiles(tmp, 7, "PROMPT.md"); err != nil {
+		t.Fatalf("ensureRalphMonitorFiles failed: %v", err)
+	}
+
+	paths := []string{
+		".ralph/ralph-context.md",
+		".ralph/ralph-tasks.md",
+		".ralph/ralph-history.json",
+		".ralph/ralph-loop.state.json",
+	}
+	for _, rel := range paths {
+		if _, err := os.Stat(filepath.Join(tmp, rel)); err != nil {
+			t.Fatalf("expected %s to exist: %v", rel, err)
 		}
 	}
 }

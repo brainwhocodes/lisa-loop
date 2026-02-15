@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/brainwhocodes/lisa-loop/internal/circuit"
@@ -60,7 +62,7 @@ func main() {
 	fs.IntVar(&timeout, "timeout", 600, "Codex timeout (seconds)")
 
 	// Backend selection
-	fs.StringVar(&backend, "backend", "opencode", "Backend: cli or opencode (default: opencode)")
+	fs.StringVar(&backend, "backend", "opencode", "Backend: opencode, cli/codex, ralph, claude-code, or copilot (default: opencode)")
 
 	// OpenCode backend settings (with env fallbacks)
 	fs.StringVar(&opencodeServerURL, "opencode-url", "", "OpenCode server URL (env: OPENCODE_SERVER_URL)")
@@ -89,6 +91,8 @@ func main() {
 	opencodeUsername = envFallback(opencodeUsername, "OPENCODE_SERVER_USERNAME", "opencode")
 	opencodePassword = envFallback(opencodePassword, "OPENCODE_SERVER_PASSWORD", "")
 	opencodeModelID = envFallback(opencodeModelID, "OPENCODE_MODEL_ID", "glm-4.7")
+
+	backend = normalizeBackend(backend)
 
 	// Default max calls to 10 for opencode backend if not explicitly set
 	if backend == "opencode" && !isFlagSet(fs, "calls") {
@@ -466,6 +470,13 @@ func handleRunCommand(projectPath string, promptFile string, maxCalls int, timeo
 		os.Exit(1)
 	}
 
+	if backend == "ralph" {
+		if err := ensureRalphMonitorFiles(".", maxCalls, promptFile); err != nil {
+			fmt.Fprintf(os.Stderr, "Error preparing .ralph files: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	config := loop.Config{
 		Backend:           backend,
 		ProjectPath:       projectPath,
@@ -756,7 +767,7 @@ func printHelp() {
 	fmt.Println("  --log-format <format>   Log format: text, json, or logfmt (enables CLI log mode)")
 	fmt.Println("")
 	fmt.Println("Backend options:")
-	fmt.Println("  --backend <name>        Backend: cli or opencode (default: opencode)")
+	fmt.Println("  --backend <name>        Backend: opencode, cli/codex, ralph, claude-code, copilot")
 	fmt.Println("  --opencode-url <url>    OpenCode server URL (env: OPENCODE_SERVER_URL)")
 	fmt.Println("  --opencode-user <user>  OpenCode username (env: OPENCODE_SERVER_USERNAME, default: opencode)")
 	fmt.Println("  --opencode-pass <pass>  OpenCode password (env: OPENCODE_SERVER_PASSWORD)")
@@ -781,6 +792,60 @@ func printHelp() {
 	fmt.Println("  p            Pause/resume")
 	fmt.Println("  l            Toggle log view")
 	fmt.Println("  ?            Show help")
+}
+
+func normalizeBackend(value string) string {
+	switch value {
+	case "", "opencode":
+		return "opencode"
+	case "cli", "codex", "ralph", "claude-code", "copilot":
+		return value
+	default:
+		return value
+	}
+}
+
+func ensureRalphMonitorFiles(projectPath string, maxCalls int, promptFile string) error {
+	ralphDir := filepath.Join(projectPath, ".ralph")
+	if err := os.MkdirAll(ralphDir, 0o755); err != nil {
+		return err
+	}
+
+	writeIfMissing := func(name string, content []byte) error {
+		full := filepath.Join(ralphDir, name)
+		if _, err := os.Stat(full); err == nil {
+			return nil
+		}
+		return os.WriteFile(full, content, 0o644)
+	}
+
+	if err := writeIfMissing("ralph-context.md", []byte("# Ralph Loop Context\n\n")); err != nil {
+		return err
+	}
+	if err := writeIfMissing("ralph-tasks.md", []byte("# Ralph Tasks\n\n- [ ] Add your first task\n")); err != nil {
+		return err
+	}
+	if err := writeIfMissing("ralph-history.json", []byte("{\n  \"iterations\": [],\n  \"totalDurationMs\": 0\n}\n")); err != nil {
+		return err
+	}
+
+	state := map[string]any{
+		"active":            false,
+		"iteration":         0,
+		"maxIterations":     maxCalls,
+		"promptFile":        promptFile,
+		"completionPromise": "COMPLETE",
+	}
+	stateJSON, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	stateJSON = append(stateJSON, '\n')
+	if err := writeIfMissing("ralph-loop.state.json", stateJSON); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // envFallback returns the flag value if set, otherwise checks the environment variable,

@@ -110,9 +110,17 @@ type Model struct {
 
 // Init initializes model
 func (m Model) Init() tea.Cmd {
-	// Start the tick timer for animations
-	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+	// Start the tick timer for animations.
+	tickCmd := tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 		return tuimsg.TickMsg(t)
+	})
+
+	if m.controller == nil || m.state == StateError {
+		return tickCmd
+	}
+
+	return tea.Batch(tickCmd, func() tea.Msg {
+		return tuimsg.AutoStartLoopMsg{}
 	})
 }
 
@@ -121,6 +129,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case tuimsg.AutoStartLoopMsg:
+		if m.state == StateRunning || m.controller == nil {
+			return m, nil
+		}
+		if m.cancel != nil {
+			m.cancel()
+			m.cancel = nil
+			m.ctx = nil
+		}
+		m.state = StateRunning
+		m.activeTaskIdx = 0
+		m.ctx, m.cancel = context.WithCancel(context.Background())
+		m.status = "Running loop"
+		return m, effects.RunController(m.ctx, m.controller)
+
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyCtrlQ:
@@ -458,6 +481,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != nil && !errors.Is(msg.Err, context.Canceled) {
 			m.state = StateError
 			m.err = msg.Err
+			m.status = fmt.Sprintf("Loop failed after %d iteration(s)", m.loopNumber)
 			return m, nil
 		}
 		if errors.Is(msg.Err, context.Canceled) || m.quitting {
@@ -465,6 +489,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.state = StateComplete
 		m.activeTaskIdx = -1
+		iterations := m.loopNumber
+		if iterations <= 0 {
+			iterations = m.callsUsed
+		}
+		if iterations > 0 {
+			m.status = fmt.Sprintf("Loop complete after %d iteration(s)", iterations)
+		} else {
+			m.status = "Loop complete"
+		}
 		return m, nil
 
 	case tuimsg.CodexOutputMsg:

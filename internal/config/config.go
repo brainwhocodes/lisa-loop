@@ -22,8 +22,14 @@ func (c *Config) BackendDisplayName() string {
 	switch c.Backend {
 	case "opencode":
 		return "OpenCode Server"
-	case "cli":
+	case "cli", "codex":
 		return "Codex CLI"
+	case "ralph":
+		return "Ralph Loop CLI"
+	case "claude-code":
+		return "Claude Code CLI"
+	case "copilot":
+		return "GitHub Copilot CLI"
 	default:
 		if c.Backend != "" {
 			return c.Backend
